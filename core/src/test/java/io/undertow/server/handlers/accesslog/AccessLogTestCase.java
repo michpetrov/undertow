@@ -24,18 +24,17 @@ import io.undertow.server.handlers.StoredResponseHandler;
 import io.undertow.testutils.DefaultServer;
 import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.TestHttpClient;
+import io.undertow.util.Headers;
+import io.undertow.util.StatusCodes;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.junit.Assert;
+import org.junit.Test;
+import org.junit.runner.RunWith;
 
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-
-import io.undertow.util.Headers;
-import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
 
 /**
  * @author Stuart Douglas
@@ -67,20 +66,23 @@ public class AccessLogTestCase {
     };
 
     @Test
-    public void testRemoteAddress() throws IOException, InterruptedException {
+    public void testRemoteAddress() throws IOException {
         latch = new CountDownLatch(1);
         DefaultServer.setRootHandler(new StoredResponseHandler(new AccessLogHandler(HELLO_HANDLER, RECEIVER, "Remote address %a Code %s test-header %{i,test-header} %{STORED_RESPONSE}", AccessLogFileTestCase.class.getClassLoader())));
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
             get.addHeader("test-header", "test-value");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("HelloResponse", HttpClientUtils.readResponse(result));
-            latch.await(10, TimeUnit.SECONDS);
-            Assert.assertEquals("Remote address " + DefaultServer.getDefaultServerAddress().getAddress().getHostAddress() + " Code 200 test-header test-value HelloResponse", message);
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("HelloResponse", HttpClientUtils.readResponse(result));
+                try {
+                    latch.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                Assert.assertEquals("Remote address " + DefaultServer.getDefaultServerAddress().getAddress().getHostAddress() + " Code 200 test-header test-value HelloResponse", message);
+                return result;
+            });
         }
     }
 

@@ -18,19 +18,6 @@
 
 package io.undertow.server.handlers;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.Random;
-import java.util.concurrent.TimeUnit;
-
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.junit.runner.RunWith;
 import io.undertow.io.IoCallback;
 import io.undertow.io.Sender;
 import io.undertow.server.HttpHandler;
@@ -40,6 +27,20 @@ import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.SameThreadExecutor;
 import io.undertow.util.StatusCodes;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.io.entity.AbstractHttpEntity;
+import org.junit.Assert;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Random;
+import java.util.concurrent.TimeUnit;
 
 /**
  *
@@ -87,8 +88,7 @@ public class ChunkedRequestNotConsumedTestCase {
     @Test
     public void testChunkedRequestNotConsumed() throws IOException {
         HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             final Random random = new Random();
             final int seed = random.nextInt();
             System.out.print("Using Seed " + seed);
@@ -96,15 +96,19 @@ public class ChunkedRequestNotConsumedTestCase {
 
 
             for (int i = 0; i < 3; ++i) {
-                post.setEntity(new StringEntity("") {
+                post.setEntity(new AbstractHttpEntity("", null, true) {
+                    @Override
+                    public void close() throws IOException {
+                    }
+
                     @Override
                     public long getContentLength() {
                         return -1;
                     }
 
                     @Override
-                    public boolean isChunked() {
-                        return true;
+                    public InputStream getContent() throws IOException, UnsupportedOperationException {
+                        return null;
                     }
 
                     @Override
@@ -117,14 +121,18 @@ public class ChunkedRequestNotConsumedTestCase {
                         }
                         outstream.write(MESSAGE.getBytes(StandardCharsets.US_ASCII));
                     }
-                });
-                HttpResponse result = client.execute(post);
-                Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-                HttpClientUtils.readResponse(result);
-            }
-        } finally {
 
-            client.getConnectionManager().shutdown();
+                    @Override
+                    public boolean isStreaming() {
+                        return false;
+                    }
+                });
+                client.execute(post, result -> {
+                    Assert.assertEquals(StatusCodes.OK, result.getCode());
+                    HttpClientUtils.readResponse(result);
+                    return null;
+                });
+            }
         }
     }
 }

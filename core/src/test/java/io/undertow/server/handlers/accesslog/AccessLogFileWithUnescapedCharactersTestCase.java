@@ -25,8 +25,8 @@ import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.CompletionLatchHandler;
 import io.undertow.util.FileUtils;
 import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -108,16 +108,23 @@ public class AccessLogFileWithUnescapedCharactersTestCase {
         CompletionLatchHandler latchHandler;
         DefaultServer.setRootHandler(latchHandler = new CompletionLatchHandler(new AccessLogHandler(HELLO_HANDLER, logReceiver,
                 "%h \"%r\" %s %b", AccessLogFileWithUnescapedCharactersTestCase.class.getClassLoader())));
-        try (TestHttpClient client = new TestHttpClient()) {
-            HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/helloworld/한글이름_test.html?param=한글이름_ahoy");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
-            latchHandler.await();
-            logReceiver.awaitWrittenForTest();
-            String written = new String(Files.readAllBytes(logFileName), StandardCharsets.UTF_8);
-            final String protocolVersion = DefaultServer.isH2()? "HTTP/2.0" : result.getProtocolVersion().toString();
-            Assert.assertEquals(DefaultServer.getDefaultServerAddress().getAddress().getHostAddress() + " \"GET " + "/helloworld/한글이름_test.html?param=한글이름_ahoy " + protocolVersion + "\" 200 5" + System.lineSeparator(), written);
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            String uri = TestHttpClient.encodeURI(DefaultServer.getDefaultServerURL() + "/helloworld/한글이름_test.html?param=한글이름_ahoy");
+            HttpGet get = new HttpGet(uri);
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+                latchHandler.await();
+                try {
+                    logReceiver.awaitWrittenForTest();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                String written = new String(Files.readAllBytes(logFileName), StandardCharsets.UTF_8);
+                final String protocolVersion = DefaultServer.isH2() ? "HTTP/2.0" : result.getVersion().toString();
+                Assert.assertEquals(DefaultServer.getDefaultServerAddress().getAddress().getHostAddress() + " \"GET " + "/helloworld/한글이름_test.html?param=한글이름_ahoy " + protocolVersion + "\" 200 5" + System.lineSeparator(), written);
+                return null;
+            });
         }
     }
 }

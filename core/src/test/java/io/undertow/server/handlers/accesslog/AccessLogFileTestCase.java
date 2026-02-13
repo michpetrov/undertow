@@ -18,6 +18,22 @@
 
 package io.undertow.server.handlers.accesslog;
 
+import io.undertow.server.HttpHandler;
+import io.undertow.server.HttpServerExchange;
+import io.undertow.testutils.DefaultServer;
+import io.undertow.testutils.HttpClientUtils;
+import io.undertow.testutils.TestHttpClient;
+import io.undertow.util.CompletionLatchHandler;
+import io.undertow.util.FileUtils;
+import io.undertow.util.StatusCodes;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,23 +46,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-
-import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-import io.undertow.server.HttpHandler;
-import io.undertow.server.HttpServerExchange;
-import io.undertow.testutils.DefaultServer;
-import io.undertow.testutils.HttpClientUtils;
-import io.undertow.testutils.TestHttpClient;
-import io.undertow.util.CompletionLatchHandler;
-import io.undertow.util.FileUtils;
 
 /**
  * Tests writing the access log to a file
@@ -98,20 +97,19 @@ public class AccessLogFileTestCase {
 
         CompletionLatchHandler latchHandler;
         DefaultServer.setRootHandler(latchHandler = new CompletionLatchHandler(new AccessLogHandler(HELLO_HANDLER, logReceiver, "Remote address %a Code %s test-header %{i,test-header} %{i,non-existent} %{i,dup}", AccessLogFileTestCase.class.getClassLoader())));
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
             get.addHeader("test-header", "single-val");
             get.addHeader("dup", "d"); //we can't rely on ordering, so we just send the same thing twice to make the comparison easy
             get.addHeader("dup", "d");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+                return result;
+            });
             latchHandler.await();
             logReceiver.awaitWrittenForTest();
             Assert.assertEquals("Remote address " + DefaultServer.getDefaultServerAddress().getAddress().getHostAddress() + " Code 200 test-header single-val - [d, d]" + System.lineSeparator(), new String(Files.readAllBytes(logFileName)));
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 
@@ -125,29 +123,28 @@ public class AccessLogFileTestCase {
         CompletionLatchHandler latchHandler;
         DefaultServer.setRootHandler(latchHandler = new CompletionLatchHandler(NUM_REQUESTS * NUM_THREADS, new AccessLogHandler(HELLO_HANDLER, logReceiver, "REQ %{i,test-header}", AccessLogFileTestCase.class.getClassLoader())));
 
+        // TODO: put into try declaration with Java 19
         ExecutorService executor = Executors.newFixedThreadPool(NUM_THREADS);
         try {
-
             final List<Future<?>> futures = new ArrayList<>();
             for (int i = 0; i < NUM_THREADS; ++i) {
                 final int threadNo = i;
                 futures.add(executor.submit(new Runnable() {
                     @Override
                     public void run() {
-                        TestHttpClient client = new TestHttpClient();
-                        try {
+                        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
                             for (int i = 0; i < NUM_REQUESTS; ++i) {
                                 HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
                                 get.addHeader("test-header", "thread-" + threadNo + "-request-" + i);
-                                HttpResponse result = client.execute(get);
-                                Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-                                final String response = HttpClientUtils.readResponse(result);
-                                Assert.assertEquals("Hello", response);
+                                client.execute(get, result -> {
+                                    Assert.assertEquals(StatusCodes.OK, result.getCode());
+                                    final String response = HttpClientUtils.readResponse(result);
+                                    Assert.assertEquals("Hello", response);
+                                    return result;
+                                });
                             }
                         } catch (IOException e) {
                             throw new RuntimeException(e);
-                        } finally {
-                            client.getConnectionManager().shutdown();
                         }
                     }
                 }));
@@ -178,13 +175,14 @@ public class AccessLogFileTestCase {
         DefaultAccessLogReceiver logReceiver = new DefaultAccessLogReceiver(DefaultServer.getWorker(), logDirectory, "server.");
         CompletionLatchHandler latchHandler;
         DefaultServer.setRootHandler(latchHandler = new CompletionLatchHandler(new AccessLogHandler(HELLO_HANDLER, logReceiver, "Remote address %a Code %s test-header %{i,test-header}", AccessLogFileTestCase.class.getClassLoader())));
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
             get.addHeader("test-header", "v1");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+                return result;
+            });
             latchHandler.await();
             latchHandler.reset();
             logReceiver.awaitWrittenForTest();
@@ -197,9 +195,11 @@ public class AccessLogFileTestCase {
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
             get.addHeader("test-header", "v2");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+                return result;
+            });
             latchHandler.await();
             latchHandler.reset();
             logReceiver.awaitWrittenForTest();
@@ -209,10 +209,6 @@ public class AccessLogFileTestCase {
             Assert.assertFalse(Files.exists(logFileName));
             Path secondLogRotate = logDirectory.resolve("server." + new SimpleDateFormat("yyyy-MM-dd").format(new Date()) + "-1.log");
             Assert.assertEquals("Remote address " + DefaultServer.getDefaultServerAddress().getAddress().getHostAddress() + " Code 200 test-header v2" + System.lineSeparator(), new String(Files.readAllBytes(secondLogRotate)));
-
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
-
 }

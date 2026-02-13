@@ -25,9 +25,9 @@ import java.nio.file.attribute.FileAttribute;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.util.EntityUtils;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -113,27 +113,33 @@ public class ResourcePredicateHandlerTestCase {
     }
 
     private void testURLListing(final PathsRetainer pathsRetainer, boolean testFile) throws IOException {
-
-        TestHttpClient client = new TestHttpClient();
-        HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/" + TEST_PREFIX+"/");
-        HttpResponse result = client.execute(get);
-        Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-        String bodyToTest = EntityUtils.toString(result.getEntity());
-        //this is not optimal...
-        Assert.assertTrue(bodyToTest.contains("href='/"+TEST_PREFIX+"/"+pathsRetainer.sub.getFileName()+"/'>"+pathsRetainer.sub.getFileName()+"</a>"));
-        Assert.assertTrue(bodyToTest.contains("href='/"+TEST_PREFIX+"/"+pathsRetainer.rootFile.getFileName()+"'>"+pathsRetainer.rootFile.getFileName()+"</a>"));
-        get = new HttpGet(DefaultServer.getDefaultServerURL() + "/" + TEST_PREFIX+ "/" +pathsRetainer.sub.getFileName()+ "/");
-        result = client.execute(get);
-        Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-        bodyToTest = EntityUtils.toString(result.getEntity());
-        Assert.assertTrue(bodyToTest.contains("href='/"+TEST_PREFIX+"/'>[..]</a>"));
-        Assert.assertTrue(bodyToTest.contains("href='/"+TEST_PREFIX+"/"+pathsRetainer.sub.getFileName()+"/"+pathsRetainer.subFile.getFileName()+"'>"+pathsRetainer.subFile.getFileName()+"</a>"));
-        if(testFile) {
-            get = new HttpGet(DefaultServer.getDefaultServerURL() + "/"+TEST_PREFIX+"/"+pathsRetainer.sub.getFileName()+"/"+pathsRetainer.subFile.getFileName());
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            bodyToTest = EntityUtils.toString(result.getEntity());
-            Assert.assertEquals(GIBBERISH, bodyToTest);
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/" + TEST_PREFIX + "/");
+            client.execute(get, result -> {
+            Assert.assertEquals(StatusCodes.OK, result.getCode());
+            String bodyToTest = EntityUtils.toString(result.getEntity());
+            //this is not optimal...
+            Assert.assertTrue(bodyToTest.contains("href='/" + TEST_PREFIX + "/" + pathsRetainer.sub.getFileName() + "/'>" + pathsRetainer.sub.getFileName() + "</a>"));
+            Assert.assertTrue(bodyToTest.contains("href='/" + TEST_PREFIX + "/" + pathsRetainer.rootFile.getFileName() + "'>" + pathsRetainer.rootFile.getFileName() + "</a>"));
+                return null;
+            });
+            get = new HttpGet(DefaultServer.getDefaultServerURL() + "/" + TEST_PREFIX + "/" + pathsRetainer.sub.getFileName() + "/");
+            client.execute(get, result -> {
+            Assert.assertEquals(StatusCodes.OK, result.getCode());
+            String bodyToTest = EntityUtils.toString(result.getEntity());
+            Assert.assertTrue(bodyToTest.contains("href='/" + TEST_PREFIX + "/'>[..]</a>"));
+            Assert.assertTrue(bodyToTest.contains("href='/" + TEST_PREFIX + "/" + pathsRetainer.sub.getFileName() + "/" + pathsRetainer.subFile.getFileName() + "'>" + pathsRetainer.subFile.getFileName() + "</a>"));
+                return null;
+            });
+            if (testFile) {
+                get = new HttpGet(DefaultServer.getDefaultServerURL() + "/" + TEST_PREFIX + "/" + pathsRetainer.sub.getFileName() + "/" + pathsRetainer.subFile.getFileName());
+                client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String bodyToTest = EntityUtils.toString(result.getEntity());
+                Assert.assertEquals(GIBBERISH, bodyToTest);
+                    return null;
+                });
+            }
         }
     }
 

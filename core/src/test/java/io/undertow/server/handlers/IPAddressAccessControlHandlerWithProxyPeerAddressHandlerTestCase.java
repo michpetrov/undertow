@@ -28,8 +28,8 @@ import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.Headers;
 import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -62,110 +62,103 @@ public class IPAddressAccessControlHandlerWithProxyPeerAddressHandlerTestCase {
     @Test
     @IPv6Ignore
     public void testWithoutXForwardedFor() throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL());
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String response = HttpClientUtils.readResponse(result);
-            Assert.assertTrue(response.contains("127.0.0.1"));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertTrue(response.contains("127.0.0.1"));
+                return null;
+            });
         }
     }
 
     @Test
     @IPv6Only
     public void testWithoutXForwardedForIPv6() throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL());
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String response = HttpClientUtils.readResponse(result);
-            Assert.assertTrue(response.contains("0:0:0:0:0:0:0:1"));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertTrue(response.contains("0:0:0:0:0:0:0:1"));
+                return null;
+            });
         }
     }
 
     @Test
     @IPv6Ignore
     public void testWithXForwardedFor1() throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL());
             get.addHeader(Headers.X_FORWARDED_FOR_STRING, "127.0.0.2");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String response = HttpClientUtils.readResponse(result);
-            Assert.assertTrue(response.contains("127.0.0.2"));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertTrue(response.contains("127.0.0.2"));
+                return null;
+            });
         }
     }
 
     @Test
     @IPv6Ignore
     public void testWithXForwardedFor2() throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL());
             get.addHeader(Headers.X_FORWARDED_FOR_STRING, "127.0.0.1, 192.168.0.10");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String response = HttpClientUtils.readResponse(result);
-            Assert.assertTrue(response.contains("127.0.0.1"));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertTrue(response.contains("127.0.0.1"));
+                return null;
+            });
         }
     }
 
     @Test
     @IPv6Ignore
     public void testWithXForwardedFor3() throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL());
             get.addHeader(Headers.X_FORWARDED_FOR_STRING, "127.0.0.1, 127.0.0.2, 192.168.0.10");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String response = HttpClientUtils.readResponse(result);
-            Assert.assertTrue(response.contains("127.0.0.1"));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertTrue(response.contains("127.0.0.1"));
+                return null;
+            });
         }
     }
 
     @Test
     @IPv6Ignore
     public void testForbiddenWithXForwardedFor1() throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL());
             get.addHeader(Headers.X_FORWARDED_FOR_STRING, "192.168.0.10");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.FORBIDDEN, result.getStatusLine().getStatusCode());
-            String response = HttpClientUtils.readResponse(result);
-            Assert.assertTrue(response.isEmpty());
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.FORBIDDEN, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertTrue(response.isEmpty());
+                return null;
+            });
         }
     }
 
     @Test
     @IPv6Ignore
     public void testForbiddenWithXForwardedFor2() throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL());
             get.addHeader(Headers.X_FORWARDED_FOR_STRING, "192.168.0.10, 192.168.0.20");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.FORBIDDEN, result.getStatusLine().getStatusCode());
-            String response = HttpClientUtils.readResponse(result);
-            Assert.assertTrue(response.isEmpty());
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.FORBIDDEN, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertTrue(response.isEmpty());
+                return null;
+            });
         }
     }
 

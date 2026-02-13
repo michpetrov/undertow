@@ -22,9 +22,9 @@ import java.io.IOException;
 import java.security.GeneralSecurityException;
 
 import io.undertow.util.Headers;
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -45,7 +45,6 @@ public class SecureCookieHandlerTestCase {
 
     @Test
     public void testSecureCookieHandler() throws IOException, GeneralSecurityException {
-
         DefaultServer.setRootHandler(new SecureCookieHandler(new HttpHandler() {
             @Override
             public void handleRequest(final HttpServerExchange exchange) throws Exception {
@@ -54,23 +53,24 @@ public class SecureCookieHandlerTestCase {
         }));
 
         DefaultServer.startSSLServer();
-        TestHttpClient client = new TestHttpClient();
-        client.setSSLContext(DefaultServer.getClientSSLContext());
-        try {
+        try (CloseableHttpClient client = TestHttpClient.withSSLContext(DefaultServer.getClientSSLContext()).build()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerSSLAddress());
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
+            client.execute(get, result -> {
+            Assert.assertEquals(StatusCodes.OK, result.getCode());
             Header header = result.getFirstHeader("set-cookie");
             Assert.assertEquals("foo=bar; Secure", header.getValue());
             FileUtils.readFile(result.getEntity().getContent());
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL());
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            header = result.getFirstHeader("set-cookie");
+            client.execute(get, result -> {
+            Assert.assertEquals(StatusCodes.OK, result.getCode());
+            Header header = result.getFirstHeader("set-cookie");
             Assert.assertEquals("foo=bar", header.getValue());
+                return null;
+            });
         } finally {
-            client.getConnectionManager().shutdown();
             DefaultServer.stopSSLServer();
         }
     }
@@ -86,18 +86,17 @@ public class SecureCookieHandlerTestCase {
         }));
 
         DefaultServer.startSSLServer();
-        TestHttpClient client = new TestHttpClient();
-        client.setSSLContext(DefaultServer.getClientSSLContext());
-        try {
+        try (CloseableHttpClient client = TestHttpClient.withSSLContext(DefaultServer.getClientSSLContext()).build()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerSSLAddress());
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
+            client.execute(get, result -> {
+            Assert.assertEquals(StatusCodes.OK, result.getCode());
 
             Header header = result.getFirstHeader("set-cookie");
             Assert.assertEquals("cookie=value; Secure", header.getValue());
             FileUtils.readFile(result.getEntity().getContent());
+                return null;
+            });
         } finally {
-            client.getConnectionManager().shutdown();
             DefaultServer.stopSSLServer();
         }
     }

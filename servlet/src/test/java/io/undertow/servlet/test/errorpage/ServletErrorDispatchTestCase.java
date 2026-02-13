@@ -18,17 +18,6 @@
 
 package io.undertow.servlet.test.errorpage;
 
-import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
-
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpRequestBase;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
 import io.undertow.server.handlers.PathHandler;
 import io.undertow.servlet.api.DeploymentInfo;
 import io.undertow.servlet.api.DeploymentManager;
@@ -44,6 +33,16 @@ import io.undertow.util.StatusCodes;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.junit.Assert;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 /**
  * @author baranowb
@@ -52,11 +51,10 @@ import jakarta.servlet.http.HttpServletResponse;
 @ProxyIgnore
 public class ServletErrorDispatchTestCase {
 
+    private static final String METHOD_NAME = "POST";
 
     @BeforeClass
     public static void setup() throws ServletException {
-
-
         final ServletContainer container = ServletContainer.Factory.newInstance();
         final PathHandler root = new PathHandler();
         DefaultServer.setRootHandler(root);
@@ -70,10 +68,10 @@ public class ServletErrorDispatchTestCase {
         builder.addErrorPage(new ErrorPage("/bestErrorPageEver", StatusCodes.METHOD_NOT_ALLOWED));
 
         builder.setClassIntrospecter(TestClassIntrospector.INSTANCE)
-        .setClassLoader(ServletErrorDispatchTestCase.class.getClassLoader())
-        .setContextPath("/servletContext")
-        .setDeploymentName("servletContext1.war")
-        .setSendCustomReasonPhraseOnError(true);
+                .setClassLoader(ServletErrorDispatchTestCase.class.getClassLoader())
+                .setContextPath("/servletContext")
+                .setDeploymentName("servletContext1.war")
+                .setSendCustomReasonPhraseOnError(true);
 
         final DeploymentManager manager = container.addDeployment(builder);
         manager.deploy();
@@ -82,32 +80,25 @@ public class ServletErrorDispatchTestCase {
 
     @Test
     public void testSimpleHttpServlet() throws IOException, URISyntaxException {
-        TestHttpClient client = new TestHttpClient();
-        try {
-            HttpRequestBase base = new HttpRequestBase() {
-
-                @Override
-                public String getMethod() {
-                    return "CONNECT";
-                }
-            };
-            base.setURI(new URI(DefaultServer.getDefaultServerURL() + "/servletContext/bob.jsp"));
-            HttpResponse result = client.execute(base);
-            Assert.assertEquals(StatusCodes.METHOD_NOT_ALLOWED, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(GR8MimicServlet.FAIL_IN_CORRECT_WAY, result.getStatusLine().getReasonPhrase());
-        } finally {
-            client.getConnectionManager().shutdown();
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            HttpUriRequestBase base = new HttpUriRequestBase(METHOD_NAME, new URI(DefaultServer.getDefaultServerURL() + "/servletContext/bob.jsp"));
+            client.execute(base, result -> {
+                Assert.assertEquals(StatusCodes.METHOD_NOT_ALLOWED, result.getCode());
+                Assert.assertEquals(GR8MimicServlet.FAIL_IN_CORRECT_WAY, result.getReasonPhrase());
+                return null;
+            });
         }
     }
 
     //NOTE: this is bad, tests depend on different handlers/servlets from undertow or jakarta, which have different behavior
-    public static class MimicServlet extends DefaultServlet{
+    public static class MimicServlet extends DefaultServlet {
 
         public static final String FAIL_IN_CORRECT_WAY = "Typhon cacoplasmus";
         public static final int FAIL_CODE_IN_A_GOOD_WAY = StatusCodes.METHOD_NOT_ALLOWED;
+
         @Override
         protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-            if(req.getMethod().equals("CONNECT")) {
+            if (req.getMethod().equals(METHOD_NAME)) {
                 resp.sendError(FAIL_CODE_IN_A_GOOD_WAY, FAIL_IN_CORRECT_WAY);
             } else {
                 super.service(req, resp);
@@ -115,10 +106,11 @@ public class ServletErrorDispatchTestCase {
         }
     }
 
-    public static class GR8MimicServlet extends DefaultServlet{
+    public static class GR8MimicServlet extends DefaultServlet {
 
         public static final String FAIL_IN_CORRECT_WAY = "Typhon cacoplasmus grandiose";
         public static final int FAIL_CODE_IN_A_GOOD_WAY = StatusCodes.METHOD_NOT_ALLOWED;
+
         @Override
         protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
             resp.sendError(FAIL_CODE_IN_A_GOOD_WAY, FAIL_IN_CORRECT_WAY);

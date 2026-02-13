@@ -23,6 +23,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import jakarta.servlet.ServletException;
+//import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -33,7 +34,7 @@ import io.undertow.servlet.api.ServletInfo;
 import io.undertow.servlet.test.util.DeploymentUtils;
 import io.undertow.testutils.DefaultServer;
 import io.undertow.testutils.HttpOneOnly;
-import io.undertow.testutils.TestHttpClient;
+//import io.undertow.testutils.TestHttpClient;
 
 /**
  * @author Stuart Douglas
@@ -69,8 +70,7 @@ public class SslUpgradeTestCase {
     }
 
     public void runTest(final String url) throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        //try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             final Socket socket = DefaultServer.getClientSSLContext().getSocketFactory().createSocket(new Socket(DefaultServer.getHostAddress("default"), DefaultServer.getHostSSLPort("default")), DefaultServer.getHostAddress("default"), DefaultServer.getHostSSLPort("default"), true);
 
             InputStream in = socket.getInputStream();
@@ -91,10 +91,7 @@ public class SslUpgradeTestCase {
             out.write("exit\r\n\r\n".getBytes());
             out.flush();
             socket.close();
-
-        } finally {
-            client.getConnectionManager().shutdown();
-        }
+        //}
     }
 
     private String readBytes(final InputStream in) throws IOException {
@@ -106,5 +103,4 @@ public class SslUpgradeTestCase {
         }
         return builder.toString();
     }
-
 }

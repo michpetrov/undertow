@@ -10,8 +10,8 @@ import io.undertow.testutils.TestHttpClient;
 import java.io.IOException;
 
 import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -74,35 +74,42 @@ public class ExceptionHandlerTestCase {
                 });
         DefaultServer.setRootHandler(exceptionHandler);
 
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("expected", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("expected", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/exceptionParent");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("parent exception handled", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("parent exception handled", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/exceptionChild");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("child exception handled", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("child exception handled", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/exceptionAnotherChild");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("parent exception handled", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("parent exception handled", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/illegalArgumentException");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("catch all throwables", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("catch all throwables", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 
@@ -120,14 +127,13 @@ public class ExceptionHandlerTestCase {
         final HttpHandler exceptionHandler = Handlers.exceptionHandler(pathHandler);
         DefaultServer.setRootHandler(exceptionHandler);
 
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.INTERNAL_SERVER_ERROR, result.getStatusLine().getStatusCode());
-            HttpClientUtils.readResponse(result);
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.INTERNAL_SERVER_ERROR, result.getCode());
+                HttpClientUtils.readResponse(result);
+                return null;
+            });
         }
     }
 
@@ -142,12 +148,12 @@ public class ExceptionHandlerTestCase {
                 });
 
         final HttpHandler exceptionHandler = Handlers.exceptionHandler(pathHandler)
-            .addExceptionHandler(IllegalArgumentException.class, new HttpHandler() {
-                @Override
-                public void handleRequest(HttpServerExchange exchange) throws Exception {
-                    exchange.getResponseSender().send("exception handled");
-                }
-            });
+                .addExceptionHandler(IllegalArgumentException.class, new HttpHandler() {
+                    @Override
+                    public void handleRequest(HttpServerExchange exchange) throws Exception {
+                        exchange.getResponseSender().send("exception handled");
+                    }
+                });
 
         DefaultServer.setRootHandler(new HttpHandler() {
             @Override
@@ -160,14 +166,13 @@ public class ExceptionHandlerTestCase {
             }
         });
 
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("exception handled", HttpClientUtils.readResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("exception handled", HttpClientUtils.readResponse(result));
+                return null;
+            });
         }
     }
 

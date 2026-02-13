@@ -18,14 +18,6 @@
 
 package io.undertow.server.ssl;
 
-import java.io.IOException;
-import java.security.GeneralSecurityException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.testutils.DefaultServer;
@@ -34,17 +26,26 @@ import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
 import io.undertow.util.StatusCodes;
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.config.SocketConfig;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.util.EntityUtils;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.ssl.ClientTlsStrategyBuilder;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.core5.http.io.SocketConfig;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.apache.hc.core5.util.Timeout;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
+import java.io.IOException;
+import java.security.GeneralSecurityException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author Stuart Douglas
@@ -68,16 +69,15 @@ public class SimpleSSLTestCase {
         });
 
         DefaultServer.startSSLServer();
-        TestHttpClient client = new TestHttpClient();
-        client.setSSLContext(DefaultServer.getClientSSLContext());
-        try {
+        try (CloseableHttpClient client = TestHttpClient.withSSLContext(DefaultServer.getClientSSLContext()).build()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerSSLAddress());
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Header[] header = result.getHeaders("scheme");
-            Assert.assertEquals("https", header[0].getValue());
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Header[] header = result.getHeaders("scheme");
+                Assert.assertEquals("https", header[0].getValue());
+                return null;
+            });
         } finally {
-            client.getConnectionManager().shutdown();
             DefaultServer.stopSSLServer();
         }
     }
@@ -96,20 +96,18 @@ public class SimpleSSLTestCase {
         });
 
         DefaultServer.startSSLServer();
-        TestHttpClient client = new TestHttpClient();
-        client.setSSLContext(DefaultServer.getClientSSLContext());
-        try {
-            for(int i = 0; i <5; ++ i) {
+        try (CloseableHttpClient client = TestHttpClient.withSSLContext(DefaultServer.getClientSSLContext()).build()) {
+            for (int i = 0; i < 5; ++i) {
                 HttpGet get = new HttpGet(DefaultServer.getDefaultServerSSLAddress());
-                HttpResponse result = client.execute(get);
-                Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-                Header[] header = result.getHeaders("scheme");
-                Assert.assertEquals("https", header[0].getValue());
-                HttpClientUtils.readResponse(result);
-
+                client.execute(get, result -> {
+                    Assert.assertEquals(StatusCodes.OK, result.getCode());
+                    Header[] header = result.getHeaders("scheme");
+                    Assert.assertEquals("https", header[0].getValue());
+                    HttpClientUtils.readResponse(result);
+                    return null;
+                });
             }
         } finally {
-            client.getConnectionManager().shutdown();
             DefaultServer.stopSSLServer();
         }
     }
@@ -158,10 +156,20 @@ public class SimpleSSLTestCase {
         DefaultServer.setRootHandler(handler);
         DefaultServer.startSSLServer();
         ExecutorService executorService = Executors.newFixedThreadPool(concurrency);
-        try (CloseableHttpClient client = HttpClients.custom().disableConnectionState()
-                .setSSLContext(DefaultServer.getClientSSLContext())
-                .setDefaultSocketConfig(SocketConfig.custom().setSoTimeout(60000).build())
+
+        ClientTlsStrategyBuilder clientTlsStrategyBuilder = ClientTlsStrategyBuilder.create().setSslContext(DefaultServer.getClientSSLContext());
+
+        PoolingHttpClientConnectionManager connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
+                .setTlsSocketStrategy(clientTlsStrategyBuilder.buildClassic())
+                .setDefaultSocketConfig(SocketConfig.custom()
+                        .setSoTimeout(Timeout.ofMinutes(1))
+                        .build())
                 .setMaxConnPerRoute(1000)
+                .build();
+
+        try (CloseableHttpClient client = TestHttpClient.custom()
+                .setConnectionManager(connectionManager)
+                .disableConnectionState()
                 .build()) {
             AtomicBoolean failed = new AtomicBoolean();
             AtomicInteger processed = new AtomicInteger(0);
@@ -171,12 +179,15 @@ public class SimpleSSLTestCase {
                     if (failed.get()) {
                         return;
                     }
-                    try (CloseableHttpResponse result = client.execute(new HttpGet(DefaultServer.getDefaultServerSSLAddress()))) {
-                        Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-                        Header[] header = result.getHeaders("scheme");
-                        Assert.assertEquals("https", header[0].getValue());
-                        EntityUtils.consumeQuietly(result.getEntity());
-                        processed.incrementAndGet();
+                    try {
+                        client.execute(new HttpGet(DefaultServer.getDefaultServerSSLAddress()), result -> {
+                            Assert.assertEquals(StatusCodes.OK, result.getCode());
+                            Header[] header = result.getHeaders("scheme");
+                            Assert.assertEquals("https", header[0].getValue());
+                            EntityUtils.consumeQuietly(result.getEntity());
+                            processed.incrementAndGet();
+                            return null;
+                        });
                     } catch (Throwable t) {
                         if (failed.compareAndSet(false, true)) {
                             t.printStackTrace();

@@ -25,8 +25,9 @@ import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.HttpOneOnly;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.Headers;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.AbstractHttpEntity;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.io.entity.AbstractHttpEntity;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -66,7 +67,7 @@ public class BlockingReadTimeoutHandlerTestCase {
     private static final CountDownLatch errorLatch = new CountDownLatch(1);
 
     @Test
-    public void testReadTimeout() throws InterruptedException {
+    public void testReadTimeout() throws InterruptedException, IOException {
         DefaultServer.setRootHandler(BlockingReadTimeoutHandler.builder().nextHandler(new BlockingHandler(new HttpHandler() {
             @Override
             public void handleRequest(final HttpServerExchange exchange) throws Exception {
@@ -80,10 +81,14 @@ public class BlockingReadTimeoutHandlerTestCase {
             }
         })).readTimeout(Duration.ofMillis(1)).build());
 
-        final TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL());
-            post.setEntity(new AbstractHttpEntity() {
+            post.setEntity(new AbstractHttpEntity("", null, false) {
+
+                @Override
+                public void close() throws IOException {
+
+                }
 
                 @Override
                 public InputStream getContent() throws IOException, IllegalStateException {
@@ -120,7 +125,7 @@ public class BlockingReadTimeoutHandlerTestCase {
             });
             post.addHeader(Headers.CONNECTION_STRING, "close");
             try {
-                client.execute(post);
+                client.execute(post, r -> r);
             } catch (IOException e) {
 
             }
@@ -129,8 +134,6 @@ public class BlockingReadTimeoutHandlerTestCase {
             } else {
                 Assert.fail("Read did not time out");
             }
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 }

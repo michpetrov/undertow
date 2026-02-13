@@ -26,10 +26,10 @@ import io.undertow.testutils.DefaultServer;
 import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.StatusCodes;
-import org.apache.http.HttpHeaders;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.HttpHeaders;
+import org.apache.hc.core5.http.io.entity.AbstractHttpEntity;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
@@ -90,36 +90,61 @@ public class ChunkedRequestTransferCodingTestCase {
     public void testChunkedRequest() throws IOException {
         connection = null;
         HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             generateMessage(1);
-            post.setEntity(new StringEntity(message) {
+            post.setEntity(new AbstractHttpEntity("", null, true) {
+                @Override
+                public void close() throws IOException {
+                }
+
                 @Override
                 public long getContentLength() {
                     return -1;
                 }
+
+                @Override
+                public InputStream getContent() throws IOException, UnsupportedOperationException {
+                    return null;
+                }
+
+                @Override
+                public void writeTo(OutputStream outstream) throws IOException {
+                    outstream.write(message.getBytes());
+                    outstream.flush();
+                }
+
+                @Override
+                public boolean isStreaming() {
+                    return false;
+                }
             });
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            HttpClientUtils.readResponse(result);
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                HttpClientUtils.readResponse(result);
+                return null;
+            });
 
             final Random random = new Random();
-            final int seed =  random.nextInt();
+            final int seed = random.nextInt();
             System.out.print("Using Seed " + seed);
             random.setSeed(seed);
 
 
             for (int i = 0; i < 10; ++i) {
                 generateMessage(100 * i);
-                post.setEntity(new StringEntity(message) {
+                post.setEntity(new AbstractHttpEntity("", null, true) {
+                    @Override
+                    public void close() throws IOException {
+                    }
+
                     @Override
                     public long getContentLength() {
                         return -1;
                     }
 
                     @Override
-                    public boolean isChunked() {
-                        return true;
+                    public InputStream getContent() throws IOException, UnsupportedOperationException {
+                        return null;
                     }
 
                     @Override
@@ -134,14 +159,18 @@ public class ChunkedRequestTransferCodingTestCase {
                             ++i;
                         }
                     }
-                });
-                result = client.execute(post);
-                Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-                HttpClientUtils.readResponse(result);
-            }
-        } finally {
 
-            client.getConnectionManager().shutdown();
+                    @Override
+                    public boolean isStreaming() {
+                        return false;
+                    }
+                });
+                client.execute(post, result -> {
+                    Assert.assertEquals(StatusCodes.OK, result.getCode());
+                    HttpClientUtils.readResponse(result);
+                    return null;
+                });
+            }
         }
     }
 
@@ -152,28 +181,49 @@ public class ChunkedRequestTransferCodingTestCase {
         OptionMap existing = DefaultServer.getUndertowOptions();
         HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
         post.setHeader(HttpHeaders.CONNECTION, "close");
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             generateMessage(1);
-            post.setEntity(new StringEntity(message) {
+            post.setEntity(new AbstractHttpEntity("", null, true) {
+                @Override
+                public void close() throws IOException {
+                }
+
                 @Override
                 public long getContentLength() {
                     return -1;
                 }
+
+                @Override
+                public InputStream getContent() throws IOException, UnsupportedOperationException {
+                    return null;
+                }
+
+                @Override
+                public void writeTo(OutputStream outstream) throws IOException {
+                    outstream.write(message.getBytes());
+                    outstream.flush();
+                }
+
+                @Override
+                public boolean isStreaming() {
+                    return false;
+                }
             });
             DefaultServer.setUndertowOptions(OptionMap.create(UndertowOptions.MAX_ENTITY_SIZE, 3L));
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.INTERNAL_SERVER_ERROR, result.getStatusLine().getStatusCode());
-            HttpClientUtils.readResponse(result);
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.INTERNAL_SERVER_ERROR, result.getCode());
+                HttpClientUtils.readResponse(result);
+                return null;
+            });
             connection = null;
             DefaultServer.setUndertowOptions(OptionMap.create(UndertowOptions.MAX_ENTITY_SIZE, (long) message.length()));
-            result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            HttpClientUtils.readResponse(result);
-
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                HttpClientUtils.readResponse(result);
+                return null;
+            });
         } finally {
             DefaultServer.setUndertowOptions(existing);
-            client.getConnectionManager().shutdown();
         }
     }
 

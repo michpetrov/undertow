@@ -25,8 +25,8 @@ import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.CompletionLatchHandler;
 import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -48,18 +48,19 @@ public class MetricsHandlerTestCase {
             @Override
             public void handleRequest(HttpServerExchange exchange) throws Exception {
                 Thread.sleep(100);
-                if(exchange.getQueryString().contains("error")) {
+                if (exchange.getQueryString().contains("error")) {
                     throw new RuntimeException();
                 }
                 exchange.getResponseSender().send("Hello");
             }
         })));
         HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
-        TestHttpClient client = new TestHttpClient();
-        try {
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+                return null;
+            });
             latchHandler.await();
             latchHandler.reset();
 
@@ -69,9 +70,11 @@ public class MetricsHandlerTestCase {
             Assert.assertEquals(metrics.getMinRequestTime(), metrics.getMaxRequestTime());
             Assert.assertEquals(metrics.getMaxRequestTime(), metrics.getTotalRequestTime());
 
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             latchHandler.await();
             latchHandler.reset();
@@ -81,9 +84,11 @@ public class MetricsHandlerTestCase {
             Assert.assertEquals(0, metrics.getTotalErrors());
 
 
-            result = client.execute(new HttpGet(DefaultServer.getDefaultServerURL() + "/path?error=true"));
-            Assert.assertEquals(StatusCodes.INTERNAL_SERVER_ERROR, result.getStatusLine().getStatusCode());
-            HttpClientUtils.readResponse(result);
+            client.execute(new HttpGet(DefaultServer.getDefaultServerURL() + "/path?error=true"), result -> {
+                Assert.assertEquals(StatusCodes.INTERNAL_SERVER_ERROR, result.getCode());
+                HttpClientUtils.readResponse(result);
+                return null;
+            });
 
             latchHandler.await();
             latchHandler.reset();
@@ -91,10 +96,6 @@ public class MetricsHandlerTestCase {
             metrics = metricsHandler.getMetrics();
             Assert.assertEquals(3, metrics.getTotalRequests());
             Assert.assertEquals(1, metrics.getTotalErrors());
-
-        } finally {
-
-            client.getConnectionManager().shutdown();
         }
     }
 }

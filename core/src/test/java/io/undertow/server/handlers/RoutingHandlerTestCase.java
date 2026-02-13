@@ -29,11 +29,11 @@ import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.Methods;
 
 import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpDelete;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpPut;
+import org.apache.hc.client5.http.classic.methods.HttpDelete;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.classic.methods.HttpPut;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -50,18 +50,18 @@ public class RoutingHandlerTestCase {
     @BeforeClass
     public static void setup() {
         RoutingHandler commonHandler = Handlers.routing()
-                    .add(Methods.GET, "/baz", new HttpHandler() {
-                        @Override
-                        public void handleRequest(HttpServerExchange exchange) throws Exception {
-                            exchange.getResponseSender().send("baz");
-                        }
-                    })
-                    .add(Methods.GET, "/baz/{foo}", new HttpHandler() {
-                        @Override
-                        public void handleRequest(HttpServerExchange exchange) throws Exception {
-                            exchange.getResponseSender().send("baz-path" + exchange.getQueryParameters().get("foo"));
-                        }
-                    });
+                .add(Methods.GET, "/baz", new HttpHandler() {
+                    @Override
+                    public void handleRequest(HttpServerExchange exchange) throws Exception {
+                        exchange.getResponseSender().send("baz");
+                    }
+                })
+                .add(Methods.GET, "/baz/{foo}", new HttpHandler() {
+                    @Override
+                    public void handleRequest(HttpServerExchange exchange) throws Exception {
+                        exchange.getResponseSender().send("baz-path" + exchange.getQueryParameters().get("foo"));
+                    }
+                });
 
         RoutingHandler convienceHandler = Handlers.routing()
                 .get("/bar", new HttpHandler() {
@@ -172,111 +172,139 @@ public class RoutingHandlerTestCase {
     }
 
     public void runRoutingTemplateHandlerTests(String prefix) throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + prefix + "/foo");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("foo", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("foo", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             HttpDelete delete = new HttpDelete(DefaultServer.getDefaultServerURL() + prefix + "/foo");
-            result = client.execute(delete);
-            Assert.assertEquals(StatusCodes.METHOD_NOT_ALLOWED, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("", HttpClientUtils.readResponse(result));
+            client.execute(delete, result -> {
+                Assert.assertEquals(StatusCodes.METHOD_NOT_ALLOWED, result.getCode());
+                Assert.assertEquals("", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + prefix + "/foo");
-            result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("posted foo", HttpClientUtils.readResponse(result));
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("posted foo", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + prefix + "/foo");
             get.addHeader("SomeHeader", "value");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("foo", HttpClientUtils.readResponse(result));
-
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("foo", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + prefix + "/foo");
             get.addHeader("SomeHeader", "special");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("special foo", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("special foo", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + prefix + "/foo/a");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("foo-path[a]", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("foo-path[a]", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + prefix + "/baz");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("baz", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("baz", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + prefix + "/baz/a");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("baz-path[a]", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("baz-path[a]", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + prefix + "/bar");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("GET bar", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("GET bar", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             post = new HttpPost(DefaultServer.getDefaultServerURL() + prefix + "/bar");
-            result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("POST bar", HttpClientUtils.readResponse(result));
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("POST bar", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             HttpPut put = new HttpPut(DefaultServer.getDefaultServerURL() + prefix + "/bar");
-            result = client.execute(put);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("PUT bar", HttpClientUtils.readResponse(result));
+            client.execute(put, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("PUT bar", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             delete = new HttpDelete(DefaultServer.getDefaultServerURL() + prefix + "/bar");
-            result = client.execute(delete);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("DELETE bar", HttpClientUtils.readResponse(result));
+            client.execute(delete, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("DELETE bar", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + prefix);
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("GET /", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("GET /", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + prefix + "/scoop/scoop");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("SCOOP GET", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("SCOOP GET", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             post = new HttpPost(DefaultServer.getDefaultServerURL() + prefix + "/scoop/scoop");
-            result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("SCOOP POST", HttpClientUtils.readResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("SCOOP POST", HttpClientUtils.readResponse(result));
+                return null;
+            });
         }
     }
 
     @Test
     public void testWildCardRoutingTemplateHandler() throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/wild/test/card");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("wild:[test]:[card]", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("wild:[test]:[card]", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/wilder/test/card");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("wilder:[test/card]", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("wilder:[test/card]", HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/wildestBeast");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("wildest:[Beast]", HttpClientUtils.readResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("wildest:[Beast]", HttpClientUtils.readResponse(result));
+                return null;
+            });
         }
     }
-
 }

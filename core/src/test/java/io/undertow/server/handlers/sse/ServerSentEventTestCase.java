@@ -26,9 +26,8 @@ import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.StatusCodes;
 import io.undertow.util.WorkerUtils;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.DecompressingHttpClient;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -53,8 +52,7 @@ public class ServerSentEventTestCase {
 
     @Test
     public void testSSE() throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             DefaultServer.setRootHandler(new ServerSentEventHandler(new ServerSentEventConnectionCallback() {
                 @Override
                 public void connected(ServerSentEventConnection connection, String lastEventId) {
@@ -85,21 +83,19 @@ public class ServerSentEventTestCase {
             }));
 
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            final String response = HttpClientUtils.readResponse(result);
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                final String response = HttpClientUtils.readResponse(result);
 
-            Assert.assertEquals("data:msg 1\n\ndata:msg\ndata:2\n\n", response);
-
-        } finally {
-            client.getConnectionManager().shutdown();
+                Assert.assertEquals("data:msg 1\n\ndata:msg\ndata:2\n\n", response);
+                return null;
+            });
         }
     }
 
     @Test
     public void testRetry() throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             DefaultServer.setRootHandler(new ServerSentEventHandler(new ServerSentEventConnectionCallback() {
                 @Override
                 public void connected(ServerSentEventConnection connection, String lastEventId) {
@@ -119,24 +115,21 @@ public class ServerSentEventTestCase {
             }));
 
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            final String response = HttpClientUtils.readResponse(result);
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                final String response = HttpClientUtils.readResponse(result);
 
-            Assert.assertEquals("retry:1000\n\n", response);
-
-        } finally {
-            client.getConnectionManager().shutdown();
+                Assert.assertEquals("retry:1000\n\n", response);
+                return null;
+            });
         }
     }
-
 
     @Test
     public void testProgressiveSSEWithCompression() throws IOException {
         final AtomicReference<ServerSentEventConnection> connectionReference = new AtomicReference<>();
-        DecompressingHttpClient client = new DecompressingHttpClient(new TestHttpClient());
-        try {
-
+        // decompression is automatic
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             DefaultServer.setRootHandler(new EncodingHandler(new ContentEncodingRepository()
                     .addEncodingHandler("deflate", new DeflateEncodingProvider(), 50))
                     .setNext(new ServerSentEventHandler(new ServerSentEventConnectionCallback() {
@@ -159,15 +152,15 @@ public class ServerSentEventTestCase {
                     })));
 
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            InputStream stream = result.getEntity().getContent();
-            assertData(stream, "data:msg 1\n\n");
-            connectionReference.get().send("msg 2");
-            assertData(stream, "data:msg 2\n\n");
-            connectionReference.get().close();
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                InputStream stream = result.getEntity().getContent();
+                assertData(stream, "data:msg 1\n\n");
+                connectionReference.get().send("msg 2");
+                assertData(stream, "data:msg 2\n\n");
+                connectionReference.get().close();
+                return null;
+            });
         }
     }
 
@@ -177,15 +170,15 @@ public class ServerSentEventTestCase {
         byte[] buf = new byte[100];
         while (index < d.length) {
             int r = stream.read(buf);
-            if(r == -1 ){
+            if (r == -1) {
                 Assert.fail("unexpected end of stream at index " + index);
             }
             int rem = d.length - index;
-            if(r > rem) {
-                Assert.fail("Read too much data index: " + index + " expected: " + data + " read: " + new String(buf, 0 , r));
+            if (r > rem) {
+                Assert.fail("Read too much data index: " + index + " expected: " + data + " read: " + new String(buf, 0, r));
             }
-            for(int i = 0; i < r; ++i) {
-                Assert.assertEquals("Comparison failed " + "index: " + index + " expected: " + data + " read: " + new String(buf, 0 , r),d[index++], buf[i]);
+            for (int i = 0; i < r; ++i) {
+                Assert.assertEquals("Comparison failed " + "index: " + index + " expected: " + data + " read: " + new String(buf, 0, r), d[index++], buf[i]);
             }
         }
     }
@@ -193,12 +186,11 @@ public class ServerSentEventTestCase {
 
     @Test
     public void testLargeMessage() throws IOException {
-        TestHttpClient client = new TestHttpClient();
         final StringBuilder sb = new StringBuilder();
-        for(int i =0; i < 10000; ++i) {
+        for (int i = 0; i < 10000; ++i) {
             sb.append("hello world ");
         }
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             DefaultServer.setRootHandler(new ServerSentEventHandler(new ServerSentEventConnectionCallback() {
                 @Override
                 public void connected(ServerSentEventConnection connection, String lastEventId) {
@@ -218,14 +210,13 @@ public class ServerSentEventTestCase {
             }));
 
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            final String response = HttpClientUtils.readResponse(result);
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                final String response = HttpClientUtils.readResponse(result);
 
-            Assert.assertEquals("data:" + sb.toString() + "\n\n", response);
-
-        } finally {
-            client.getConnectionManager().shutdown();
+                Assert.assertEquals("data:" + sb.toString() + "\n\n", response);
+                return null;
+            });
         }
     }
 
@@ -253,7 +244,7 @@ public class ServerSentEventTestCase {
                                 latch.countDown();
                             }
                         });
-                        if(latch.getCount() > 0) {
+                        if (latch.getCount() > 0) {
                             WorkerUtils.executeAfter(thread, this, 100, TimeUnit.MILLISECONDS);
                         }
                     }
@@ -262,14 +253,14 @@ public class ServerSentEventTestCase {
         }));
         InputStream in = socket.getInputStream();
         OutputStream out = socket.getOutputStream();
-        out.write(("GET / HTTP/1.1\r\nHost:" + DefaultServer.getHostAddress() +"\r\n\r\n").getBytes());
+        out.write(("GET / HTTP/1.1\r\nHost:" + DefaultServer.getHostAddress() + "\r\n\r\n").getBytes());
         out.flush();
-        if(!connected.await(10, TimeUnit.SECONDS)) {
+        if (!connected.await(10, TimeUnit.SECONDS)) {
             Assert.fail();
         }
         out.close();
         in.close();
-        if(!latch.await(10, TimeUnit.SECONDS)) {
+        if (!latch.await(10, TimeUnit.SECONDS)) {
             Assert.fail();
         }
     }

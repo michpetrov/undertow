@@ -30,17 +30,17 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.ContentType;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.entity.mime.FormBodyPart;
-import org.apache.http.entity.mime.HttpMultipartMode;
-import org.apache.http.entity.mime.MultipartEntity;
-import org.apache.http.entity.mime.MultipartEntityBuilder;
-import org.apache.http.entity.mime.content.FileBody;
-import org.apache.http.entity.mime.content.StringBody;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.entity.mime.FileBody;
+import org.apache.hc.client5.http.entity.mime.FormBodyPart;
+import org.apache.hc.client5.http.entity.mime.FormBodyPartBuilder;
+import org.apache.hc.client5.http.entity.mime.HttpMultipartMode;
+import org.apache.hc.client5.http.entity.mime.MultipartEntityBuilder;
+import org.apache.hc.client5.http.entity.mime.StringBody;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -96,24 +96,24 @@ public class MultipartFormDataParserTestCase {
     @Test
     public void testFileUpload() throws Exception {
         DefaultServer.setRootHandler(new BlockingHandler(createHandler()));
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
 
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
             //post.setHeader(Headers.CONTENT_TYPE, MultiPartHandler.MULTIPART_FORM_DATA);
-            MultipartEntity entity = new MultipartEntity(HttpMultipartMode.BROWSER_COMPATIBLE);
 
-            entity.addPart("formValue", new StringBody("myValue", "text/plain", StandardCharsets.UTF_8));
-            entity.addPart("file", new FileBody(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile())));
+            HttpEntity entity = MultipartEntityBuilder.create().setMode(HttpMultipartMode.LEGACY)
+                    .addPart("formValue", new StringBody("myValue", ContentType.TEXT_PLAIN))
+                    .addPart("file", new FileBody(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile())))
+                    .build();
 
             post.setEntity(entity);
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            HttpClientUtils.readResponse(result);
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                HttpClientUtils.readResponse(result);
+                return null;
+            });
 
 
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 
@@ -121,9 +121,7 @@ public class MultipartFormDataParserTestCase {
     @Test
     public void testQuotedBoundary() throws Exception {
         DefaultServer.setRootHandler(new BlockingHandler(createHandler()));
-        TestHttpClient client = new TestHttpClient();
-        try {
-
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
             post.setHeader(Headers.CONTENT_TYPE_STRING, "multipart/form-data; boundary=\"s58IGsuzbg6GBG1yIgUO8;n4WkVf7clWMje\"");
             StringEntity entity = new StringEntity("--s58IGsuzbg6GBG1yIgUO8;n4WkVf7clWMje\r\n" +
@@ -139,66 +137,61 @@ public class MultipartFormDataParserTestCase {
                     "--s58IGsuzbg6GBG1yIgUO8;n4WkVf7clWMje--\r\n");
 
             post.setEntity(entity);
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            HttpClientUtils.readResponse(result);
-
-
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                HttpClientUtils.readResponse(result);
+                return null;
+            });
         }
     }
 
     @Test
     public void testFileUploadWithEagerParsing() throws Exception {
         DefaultServer.setRootHandler(new EagerFormParsingHandler().setNext(createHandler()));
-        TestHttpClient client = new TestHttpClient();
-        try {
-
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
             //post.setHeader(Headers.CONTENT_TYPE, MultiPartHandler.MULTIPART_FORM_DATA);
-            MultipartEntity entity = new MultipartEntity(HttpMultipartMode.BROWSER_COMPATIBLE);
+            HttpEntity entity = MultipartEntityBuilder.create().setMode(HttpMultipartMode.LEGACY)
 
-            entity.addPart("formValue", new StringBody("myValue", "text/plain", StandardCharsets.UTF_8));
-            entity.addPart("file", new FileBody(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile())));
+                    .addPart("formValue", new StringBody("myValue", ContentType.TEXT_PLAIN))
+                    .addPart("file", new FileBody(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile())))
+                    .build();
 
             post.setEntity(entity);
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            HttpClientUtils.readResponse(result);
-
-
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                HttpClientUtils.readResponse(result);
+                return null;
+            });
         }
     }
 
     @Test
     public void testFileUploadWithEagerParsingAndNonASCIIFilename() throws Exception {
         DefaultServer.setRootHandler(new EagerFormParsingHandler().setNext(createHandler()));
-        TestHttpClient client = new TestHttpClient();
-        try {
-
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
-            MultipartEntity entity = new MultipartEntity();
-
-            entity.addPart("formValue", new StringBody("myValue", "text/plain", StandardCharsets.UTF_8));
-
+            // TODO: change this
             File uploadfile = new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile());
-            FormBodyPart filePart = new FormBodyPart("file", new FileBody(uploadfile, "τεστ", "application/octet-stream", StandardCharsets.UTF_8.toString()));
-            filePart.addField("Content-Disposition", "form-data; name=\"file\"; filename*=\"utf-8''%CF%84%CE%B5%CF%83%CF%84.txt\"");
-            entity.addPart(filePart);
+            FormBodyPart filePart = FormBodyPartBuilder.create()
+                    .setName("file")
+                    .setBody(new FileBody(uploadfile, ContentType.APPLICATION_OCTET_STREAM, "τεστ"))
+                    .addField("Content-Disposition", "form-data; name=\"file\"; filename*=\"utf-8''%CF%84%CE%B5%CF%83%CF%84.txt\"")
+                    .build();
+            HttpEntity entity = MultipartEntityBuilder.create()
+                    .addPart("formValue", new StringBody("myValue", ContentType.TEXT_PLAIN))
+                    .addPart(filePart)
+                    .build();
 
             post.setEntity(entity);
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            HttpClientUtils.readResponse(result);
-
-
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                HttpClientUtils.readResponse(result);
+                return result;
+            });
         }
     }
+
     private static HttpHandler createInMemoryReadingHandler(final long fileSizeThreshold) {
         return createInMemoryReadingHandler(fileSizeThreshold, -1, null);
     }
@@ -269,28 +262,27 @@ public class MultipartFormDataParserTestCase {
     public void testFileUploadWithSmallFileSizeThreshold() throws Exception {
         DefaultServer.setRootHandler(new BlockingHandler(createInMemoryReadingHandler(10)));
 
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
 
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
-            MultipartEntity entity = new MultipartEntity(HttpMultipartMode.BROWSER_COMPATIBLE);
+            HttpEntity entity = MultipartEntityBuilder.create().setMode(HttpMultipartMode.LEGACY)
 
-            entity.addPart("formValue", new StringBody("myValue", "text/plain", StandardCharsets.UTF_8));
-            entity.addPart("file", new FileBody(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile())));
+                    .addPart("formValue", new StringBody("myValue", ContentType.TEXT_PLAIN))
+                    .addPart("file", new FileBody(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile()))).build();
 
             post.setEntity(entity);
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String resp = HttpClientUtils.readResponse(result);
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String resp = HttpClientUtils.readResponse(result);
 
-            Map<String, String> parsedResponse = parse(resp);
+                Map<String, String> parsedResponse = parse(resp);
 
-            Assert.assertEquals("false", parsedResponse.get("in_memory"));
-            Assert.assertEquals("uploadfile.txt", parsedResponse.get("file_name"));
-            Assert.assertEquals(DigestUtils.md5Hex(new FileInputStream(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile()))), parsedResponse.get("hash"));
+                Assert.assertEquals("false", parsedResponse.get("in_memory"));
+                Assert.assertEquals("uploadfile.txt", parsedResponse.get("file_name"));
+                Assert.assertEquals(DigestUtils.md5Hex(new FileInputStream(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile()))), parsedResponse.get("hash"));
+                return result;
+            });
 
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 
@@ -298,27 +290,26 @@ public class MultipartFormDataParserTestCase {
     public void testFileUploadWithLargeFileSizeThreshold() throws Exception {
         DefaultServer.setRootHandler(new BlockingHandler(createInMemoryReadingHandler(10_000)));
 
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
 
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
-            MultipartEntity entity = new MultipartEntity(HttpMultipartMode.BROWSER_COMPATIBLE);
+            HttpEntity entity = MultipartEntityBuilder.create().setMode(HttpMultipartMode.LEGACY)
 
-            entity.addPart("formValue", new StringBody("myValue", "text/plain", StandardCharsets.UTF_8));
-            entity.addPart("file", new FileBody(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile())));
+                    .addPart("formValue", new StringBody("myValue", ContentType.TEXT_PLAIN))
+                    .addPart("file", new FileBody(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile()))).build();
 
             post.setEntity(entity);
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String resp = HttpClientUtils.readResponse(result);
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String resp = HttpClientUtils.readResponse(result);
 
-            Map<String, String> parsedResponse = parse(resp);
-            Assert.assertEquals("true", parsedResponse.get("in_memory"));
-            Assert.assertEquals("uploadfile.txt", parsedResponse.get("file_name"));
-            Assert.assertEquals(DigestUtils.md5Hex(new FileInputStream(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile()))), parsedResponse.get("hash"));
+                Map<String, String> parsedResponse = parse(resp);
+                Assert.assertEquals("true", parsedResponse.get("in_memory"));
+                Assert.assertEquals("uploadfile.txt", parsedResponse.get("file_name"));
+                Assert.assertEquals(DigestUtils.md5Hex(new FileInputStream(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile()))), parsedResponse.get("hash"));
+                return result;
+            });
 
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 
@@ -327,31 +318,32 @@ public class MultipartFormDataParserTestCase {
         int fileSizeThreshold = 1000;
         DefaultServer.setRootHandler(new BlockingHandler(createInMemoryReadingHandler(fileSizeThreshold)));
 
-        TestHttpClient client = new TestHttpClient();
+        CloseableHttpClient client = TestHttpClient.defaultClient();
         File file = new File("tmp_upload_file.txt");
         file.createNewFile();
         try {
             writeLargeFileContent(file, fileSizeThreshold * 2);
 
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
-            MultipartEntity entity = new MultipartEntity(HttpMultipartMode.BROWSER_COMPATIBLE);
+            HttpEntity entity = MultipartEntityBuilder.create().setMode(HttpMultipartMode.LEGACY)
 
-            entity.addPart("formValue", new StringBody("myValue", "text/plain", StandardCharsets.UTF_8));
-            entity.addPart("file", new FileBody(file));
+                    .addPart("formValue", new StringBody("myValue", ContentType.TEXT_PLAIN))
+                    .addPart("file", new FileBody(file)).build();
 
             post.setEntity(entity);
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String resp = HttpClientUtils.readResponse(result);
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String resp = HttpClientUtils.readResponse(result);
 
-            Map<String, String> parsedResponse = parse(resp);
-            Assert.assertEquals("false", parsedResponse.get("in_memory"));
-            Assert.assertEquals("tmp_upload_file.txt", parsedResponse.get("file_name"));
-            Assert.assertEquals(DigestUtils.md5Hex(new FileInputStream(file)), parsedResponse.get("hash"));
-
+                Map<String, String> parsedResponse = parse(resp);
+                Assert.assertEquals("false", parsedResponse.get("in_memory"));
+                Assert.assertEquals("tmp_upload_file.txt", parsedResponse.get("file_name"));
+                Assert.assertEquals(DigestUtils.md5Hex(new FileInputStream(file)), parsedResponse.get("hash"));
+                return result;
+            });
         } finally {
             file.delete();
-            client.getConnectionManager().shutdown();
+            client.close();
         }
     }
 
@@ -359,7 +351,7 @@ public class MultipartFormDataParserTestCase {
     public void testLargeContentWithoutFileNameWithSmallFileSizeThreshold() throws Exception {
         DefaultServer.setRootHandler(new BlockingHandler(createInMemoryReadingHandler(10)));
         File file = new File("tmp_upload_file.txt");
-        try (TestHttpClient client = new TestHttpClient()) {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             file.createNewFile();
             // 32 kb content, which exceeds default fieldSizeThreshold, the FormData.FormValue will be a FileItem
             writeLargeFileContent(file, 0x4000 * 2);
@@ -369,15 +361,17 @@ public class MultipartFormDataParserTestCase {
                     .addBinaryBody("file", Files.newInputStream(file.toPath()))
                     .build();
             post.setEntity(entity);
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String resp = HttpClientUtils.readResponse(result);
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String resp = HttpClientUtils.readResponse(result);
 
-            Map<String, String> parsedResponse = parse(resp);
+                Map<String, String> parsedResponse = parse(resp);
 
-            Assert.assertEquals("false", parsedResponse.get("in_memory"));
-            Assert.assertEquals(DigestUtils.md5Hex(Files.newInputStream(file.toPath())), parsedResponse.get("hash"));
-            Assert.assertEquals(parsedResponse.get("file_name"), "null");
+                Assert.assertEquals("false", parsedResponse.get("in_memory"));
+                Assert.assertEquals(DigestUtils.md5Hex(Files.newInputStream(file.toPath())), parsedResponse.get("hash"));
+                Assert.assertEquals(parsedResponse.get("file_name"), "null");
+                return result;
+            });
         } finally {
             if (!file.delete()) {
                 file.deleteOnExit();
@@ -389,21 +383,20 @@ public class MultipartFormDataParserTestCase {
     public void testFileUploadWithFileSizeThresholdOverflow_Sync() throws Exception {
         DefaultServer.setRootHandler(new BlockingHandler(createInMemoryReadingHandler(10, 1, null)));
 
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
 
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
-            MultipartEntity entity = new MultipartEntity(HttpMultipartMode.BROWSER_COMPATIBLE);
+            HttpEntity entity = MultipartEntityBuilder.create().setMode(HttpMultipartMode.LEGACY)
 
-            entity.addPart("formValue", new StringBody("myValue", "text/plain", StandardCharsets.UTF_8));
-            entity.addPart("file", new FileBody(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile())));
+                    .addPart("formValue", new StringBody("myValue", ContentType.TEXT_PLAIN))
+                    .addPart("file", new FileBody(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile()))).build();
 
             post.setEntity(entity);
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.REQUEST_ENTITY_TOO_LARGE, result.getStatusLine().getStatusCode());
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.REQUEST_ENTITY_TOO_LARGE, result.getCode());
+                return result;
+            });
 
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 
@@ -417,21 +410,20 @@ public class MultipartFormDataParserTestCase {
             }
         })));
 
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
 
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
-            MultipartEntity entity = new MultipartEntity(HttpMultipartMode.BROWSER_COMPATIBLE);
+            HttpEntity entity = MultipartEntityBuilder.create().setMode(HttpMultipartMode.LEGACY)
 
-            entity.addPart("formValue", new StringBody("myValue", "text/plain", StandardCharsets.UTF_8));
-            entity.addPart("file", new FileBody(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile())));
+                    .addPart("formValue", new StringBody("myValue", ContentType.TEXT_PLAIN))
+                    .addPart("file", new FileBody(new File(MultipartFormDataParserTestCase.class.getResource("uploadfile.txt").getFile()))).build();
 
             post.setEntity(entity);
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.REQUEST_ENTITY_TOO_LARGE, result.getStatusLine().getStatusCode());
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.REQUEST_ENTITY_TOO_LARGE, result.getCode());
+                return result;
+            });
 
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 

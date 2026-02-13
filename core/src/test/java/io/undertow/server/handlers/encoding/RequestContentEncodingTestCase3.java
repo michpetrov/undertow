@@ -24,13 +24,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.ByteArrayEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -78,13 +78,13 @@ public class RequestContentEncodingTestCase3 {
             @Override
             public void handleRequest(HttpServerExchange exchange) throws Exception {
                 exchange.startBlocking();
-                Future<?> result =  executor.submit(new Runnable() {
+                Future<?> result = executor.submit(new Runnable() {
                     @Override
                     public void run() {
                         exchange.getRequestReceiver().receiveFullBytes(new Receiver.FullBytesCallback() {
                             @Override
                             public void handle(HttpServerExchange exchange, byte[] message) {
-                                Assert.assertTrue(exchange.getRequestContentLength()>0);
+                                Assert.assertTrue(exchange.getRequestContentLength() > 0);
                                 exchange.getResponseSender().send(ByteBuffer.wrap(message));
                             }
                         });
@@ -106,6 +106,7 @@ public class RequestContentEncodingTestCase3 {
     public static void boom() {
         executor.shutdownNow();
     }
+
     /**
      * Tests the use of the deflate contentent encoding
      *
@@ -134,25 +135,29 @@ public class RequestContentEncodingTestCase3 {
 
 
     public void runTest(final String theMessage, String encoding) throws IOException {
-        try (CloseableHttpClient client = HttpClientBuilder.create().disableContentCompression().build()){
+        try (CloseableHttpClient client = HttpClientBuilder.create().disableContentCompression().build()) {
             message = theMessage;
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/encode");
             get.setHeader(Headers.ACCEPT_ENCODING_STRING, encoding);
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Header[] header = result.getHeaders(Headers.CONTENT_ENCODING_STRING);
-            Assert.assertEquals(encoding, header[0].getValue());
-            byte[] body = HttpClientUtils.readRawResponse(result);
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Header[] header = result.getHeaders(Headers.CONTENT_ENCODING_STRING);
+                Assert.assertEquals(encoding, header[0].getValue());
+                byte[] body = HttpClientUtils.readRawResponse(result);
 
-            HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/decode");
-            post.setEntity(new ByteArrayEntity(body));
-            post.addHeader(Headers.CONTENT_ENCODING_STRING, encoding);
+                HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/decode");
+                post.setEntity(new ByteArrayEntity(body, ContentType.TEXT_PLAIN));
+                post.addHeader(Headers.CONTENT_ENCODING_STRING, encoding);
 
-            result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String sb = HttpClientUtils.readResponse(result);
-            Assert.assertEquals(theMessage.length(), sb.length());
-            Assert.assertEquals(theMessage, sb);
+                client.execute(post, result1 -> {
+                    Assert.assertEquals(StatusCodes.OK, result1.getCode());
+                    String sb = HttpClientUtils.readResponse(result1);
+                    Assert.assertEquals(theMessage.length(), sb.length());
+                    Assert.assertEquals(theMessage, sb);
+                    return result1;
+                });
+                return result;
+            });
 
         }
     }

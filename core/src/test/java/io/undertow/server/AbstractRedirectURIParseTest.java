@@ -20,14 +20,15 @@ package io.undertow.server;
 import io.undertow.testutils.DefaultServer;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.Map;
@@ -57,118 +58,130 @@ abstract class AbstractRedirectURIParseTest {
 
     @Test
     public void testSimpleRedirectURI() throws IOException {
-        try (TestHttpClient client = new TestHttpClient()) {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             final HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/redirect?test=code&redirect_uri=192.168.1.1:50");
-            final HttpResponse result = client.execute(get);
-            assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            assertNotNull(queryParams);
-            assertEquals(2, queryParams.size());
+            client.execute(get, result -> {
+                assertEquals(StatusCodes.OK, result.getCode());
+                assertNotNull(queryParams);
+                assertEquals(2, queryParams.size());
 
-            final Deque<String> testParamValues = queryParams.get("test");
-            assertNotNull(testParamValues);
-            assertEquals(1, testParamValues.size());
-            assertEquals("code", testParamValues.getFirst());
+                final Deque<String> testParamValues = queryParams.get("test");
+                assertNotNull(testParamValues);
+                assertEquals(1, testParamValues.size());
+                assertEquals("code", testParamValues.getFirst());
 
-            final Deque<String> redirectURIParamValues = queryParams.get("redirect_uri");
-            assertNotNull(redirectURIParamValues);
-            assertEquals(1, redirectURIParamValues.size());
-            assertEquals("192.168.1.1:50", redirectURIParamValues.getFirst());
+                final Deque<String> redirectURIParamValues = queryParams.get("redirect_uri");
+                assertNotNull(redirectURIParamValues);
+                assertEquals(1, redirectURIParamValues.size());
+                assertEquals("192.168.1.1:50", redirectURIParamValues.getFirst());
+                return null;
+            });
         }
     }
 
     @Test
-    public void testUnescapedURI1() throws IOException {
-        try (TestHttpClient client = new TestHttpClient()) {
-            final HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/redirect?test=code&param=한글이름_ahoy&redirect_uri=http://localhost:8080/helloworld/한글이름_test.html");
-            final HttpResponse result = client.execute(get);
-            assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            assertNotNull(queryParams);
-            assertEquals(3, queryParams.size());
+    public void testUnescapedURI1() throws IOException, URISyntaxException {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            // this would happen automatically but now the httpget stores URI in raw format
+            String uri = TestHttpClient.encodeURI(DefaultServer.getDefaultServerURL() + "/redirect?test=code&param=한글이름_ahoy&redirect_uri=http://localhost:8080/helloworld/한글이름_test.html");
+            final HttpGet get = new HttpGet(uri);
+            client.execute(get, result -> {
+                assertEquals(StatusCodes.OK, result.getCode());
+                assertNotNull(queryParams);
+                assertEquals(3, queryParams.size());
 
-            final Deque<String> testParamValues = queryParams.get("test");
-            assertNotNull(testParamValues);
-            assertEquals(1, testParamValues.size());
-            assertEquals("code", testParamValues.getFirst());
+                final Deque<String> testParamValues = queryParams.get("test");
+                assertNotNull(testParamValues);
+                assertEquals(1, testParamValues.size());
+                assertEquals("code", testParamValues.getFirst());
 
-            final Deque<String> redirectURIParamValues = queryParams.get("redirect_uri");
-            assertNotNull(redirectURIParamValues);
-            assertEquals(1, redirectURIParamValues.size());
-            assertEquals("http://localhost:8080/helloworld/한글이름_test.html", redirectURIParamValues.getFirst());
+                final Deque<String> redirectURIParamValues = queryParams.get("redirect_uri");
+                assertNotNull(redirectURIParamValues);
+                assertEquals(1, redirectURIParamValues.size());
+                assertEquals("http://localhost:8080/helloworld/한글이름_test.html", redirectURIParamValues.getFirst());
 
-            final Deque<String> paramValues = queryParams.get("param");
-            assertNotNull(paramValues);
-            assertEquals(1, paramValues.size());
-            assertEquals("한글이름_ahoy", paramValues.getFirst());
+                final Deque<String> paramValues = queryParams.get("param");
+                assertNotNull(paramValues);
+                assertEquals(1, paramValues.size());
+                assertEquals("한글이름_ahoy", paramValues.getFirst());
+                return null;
+            });
         }
     }
 
     @Test
     public void testUnescapedURI2() throws IOException {
-        try (TestHttpClient client = new TestHttpClient()) {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             final HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/redirect?test=code&redirect_uri=http://localhost:8080/redirect?param1=value1&param2=value2");
-            final HttpResponse result = client.execute(get);
-            assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            assertNotNull(queryParams);
-            assertEquals(3, queryParams.size());
+            client.execute(get, result -> {
+                assertEquals(StatusCodes.OK, result.getCode());
+                assertNotNull(queryParams);
+                assertEquals(3, queryParams.size());
 
-            final Deque<String> testParamValues = queryParams.get("test");
-            assertNotNull(testParamValues);
-            assertEquals(1, testParamValues.size());
-            assertEquals("code", testParamValues.getFirst());
+                final Deque<String> testParamValues = queryParams.get("test");
+                assertNotNull(testParamValues);
+                assertEquals(1, testParamValues.size());
+                assertEquals("code", testParamValues.getFirst());
 
-            final Deque<String> redirectURIParamValues = queryParams.get("redirect_uri");
-            assertNotNull(redirectURIParamValues);
-            assertEquals(1, redirectURIParamValues.size());
-            assertEquals("http://localhost:8080/redirect?param1=value1", redirectURIParamValues.getFirst());
+                final Deque<String> redirectURIParamValues = queryParams.get("redirect_uri");
+                assertNotNull(redirectURIParamValues);
+                assertEquals(1, redirectURIParamValues.size());
+                assertEquals("http://localhost:8080/redirect?param1=value1", redirectURIParamValues.getFirst());
 
-            final Deque<String> param2Values = queryParams.get("param2");
-            assertNotNull(param2Values);
-            assertEquals(1, param2Values.size());
-            assertEquals("value2", param2Values.getFirst());
+                final Deque<String> param2Values = queryParams.get("param2");
+                assertNotNull(param2Values);
+                assertEquals(1, param2Values.size());
+                assertEquals("value2", param2Values.getFirst());
+                return null;
+            });
         }
     }
 
     @Test
     public void testEncodedCharacters1() throws IOException {
-        try (TestHttpClient client = new TestHttpClient()) {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             final HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/redirect?test=code&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fredirect%3Fparam1%3Dvalue1%26param2%3Dvalue2");
-            final HttpResponse result = client.execute(get);
-            assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            assertNotNull(queryParams);
-            assertEquals(2, queryParams.size());
+            client.execute(get, result -> {
+                assertEquals(StatusCodes.OK, result.getCode());
+                assertNotNull(queryParams);
+                assertEquals(2, queryParams.size());
 
-            final Deque<String> testParamValues = queryParams.get("test");
-            assertNotNull(testParamValues);
-            assertEquals(1, testParamValues.size());
-            assertEquals("code", testParamValues.getFirst());
+                final Deque<String> testParamValues = queryParams.get("test");
+                assertNotNull(testParamValues);
+                assertEquals(1, testParamValues.size());
+                assertEquals("code", testParamValues.getFirst());
 
-            final Deque<String> redirectURIParamValues = queryParams.get("redirect_uri");
-            assertNotNull(redirectURIParamValues);
-            assertEquals(1, redirectURIParamValues.size());
-            assertEquals("http://localhost:8080/redirect?param1=value1&param2=value2", redirectURIParamValues.getFirst());
+                final Deque<String> redirectURIParamValues = queryParams.get("redirect_uri");
+                assertNotNull(redirectURIParamValues);
+                assertEquals(1, redirectURIParamValues.size());
+                assertEquals("http://localhost:8080/redirect?param1=value1&param2=value2", redirectURIParamValues.getFirst());
+                return null;
+            });
         }
     }
 
     @Test
     public void testEncodedCharacters2() throws IOException {
-        try (TestHttpClient client = new TestHttpClient()) {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             final HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() +
                     "/redirect?test=code123&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fpath%2Finput%3Fp_p_id%3DJANE_DOE%26p_p_lifecycle%3D1%26_checkId_javax.portlet.action%3Dredirect");
-            final HttpResponse result = client.execute(get);
-            assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            assertNotNull(queryParams);
-            assertEquals(2, queryParams.size());
+            client.execute(get, result -> {
+                assertEquals(StatusCodes.OK, result.getCode());
+                assertNotNull(queryParams);
+                assertEquals(2, queryParams.size());
 
-            final Deque<String> testParamValues = queryParams.get("test");
-            assertNotNull(testParamValues);
-            assertEquals(1, testParamValues.size());
-            assertEquals("code123", testParamValues.getFirst());
+                final Deque<String> testParamValues = queryParams.get("test");
+                assertNotNull(testParamValues);
+                assertEquals(1, testParamValues.size());
+                assertEquals("code123", testParamValues.getFirst());
 
-            final Deque<String> redirectURIParamValues = queryParams.get("redirect_uri");
-            assertNotNull(redirectURIParamValues);
-            assertEquals(1, redirectURIParamValues.size());
-            assertEquals("http://localhost:8080/path/input?p_p_id=JANE_DOE&p_p_lifecycle=1&_checkId_javax.portlet.action=redirect",
+                final Deque<String> redirectURIParamValues = queryParams.get("redirect_uri");
+                assertNotNull(redirectURIParamValues);
+                assertEquals(1, redirectURIParamValues.size());
+                assertEquals("http://localhost:8080/path/input?p_p_id=JANE_DOE&p_p_lifecycle=1&_checkId_javax.portlet.action=redirect",
                         redirectURIParamValues.getFirst());
+                return null;
+            });
         }
     }
 }

@@ -28,8 +28,8 @@ import io.undertow.util.CompletionLatchHandler;
 import io.undertow.util.FileUtils;
 import io.undertow.util.HttpString;
 import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -90,15 +90,15 @@ public class ExtendedAccessLogFileTestCase {
     private void verifySingleLogMessageToFile(Path logFileName, DefaultAccessLogReceiver logReceiver) throws IOException, InterruptedException {
 
         CompletionLatchHandler latchHandler;
-        DefaultServer.setRootHandler(latchHandler = new CompletionLatchHandler(new AccessLogHandler(HELLO_HANDLER, logReceiver, PATTERN, new ExtendedAccessLogParser( ExtendedAccessLogFileTestCase.class.getClassLoader()).parse(PATTERN))));
-        TestHttpClient client = new TestHttpClient();
-        client.setSSLContext(DefaultServer.getClientSSLContext());
-        try {
+        DefaultServer.setRootHandler(latchHandler = new CompletionLatchHandler(new AccessLogHandler(HELLO_HANDLER, logReceiver, PATTERN, new ExtendedAccessLogParser(ExtendedAccessLogFileTestCase.class.getClassLoader()).parse(PATTERN))));
+        try (CloseableHttpClient client = TestHttpClient.withSSLContext(DefaultServer.getClientSSLContext()).build()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerSSLAddress() + "/path");
             get.addHeader("test-header", "single-val");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("Hello", HttpClientUtils.readResponse(result));
+                return result;
+            });
             latchHandler.await();
             logReceiver.awaitWrittenForTest();
             String data = new String(Files.readAllBytes(logFileName));
@@ -108,8 +108,6 @@ public class ExtendedAccessLogFileTestCase {
             Assert.assertEquals("#Software: " + Version.getFullVersionString(), lines[2]);
             Assert.assertEquals("", lines[3]);
             Assert.assertEquals("/path 'single-val' 'bb' true", lines[4]);
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 

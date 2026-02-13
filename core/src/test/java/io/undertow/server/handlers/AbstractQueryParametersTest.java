@@ -25,7 +25,8 @@ import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.ParameterLimitException;
 import io.undertow.util.URLUtils;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -50,30 +51,30 @@ public abstract class AbstractQueryParametersTest {
     protected static String[][] queryStrings = null;
 
     @BeforeClass
-    public static void setup (){
+    public static void setup() {
         DefaultServer.setRootHandler(exchange -> {
             StringBuilder sb = new StringBuilder();
             sb.append(exchange.getQueryString());
             sb.append("{");
-            Iterator<Map.Entry<String,Deque<String>>> iterator = exchange.getQueryParameters().entrySet().iterator();
+            Iterator<Map.Entry<String, Deque<String>>> iterator = exchange.getQueryParameters().entrySet().iterator();
             while (iterator.hasNext()) {
                 Map.Entry<String, Deque<String>> qp = iterator.next();
                 sb.append(qp.getKey());
                 sb.append("=>");
-                if(qp.getValue().size() == 1) {
+                if (qp.getValue().size() == 1) {
                     sb.append(qp.getValue().getFirst());
                 } else {
                     sb.append("[");
-                    for(Iterator<String> i = qp.getValue().iterator(); i.hasNext(); ) {
+                    for (Iterator<String> i = qp.getValue().iterator(); i.hasNext(); ) {
                         String val = i.next();
                         sb.append(val);
-                        if(i.hasNext()) {
+                        if (i.hasNext()) {
                             sb.append(",");
                         }
                     }
                     sb.append("]");
                 }
-                if(iterator.hasNext()) {
+                if (iterator.hasNext()) {
                     sb.append(",");
                 }
 
@@ -86,8 +87,8 @@ public abstract class AbstractQueryParametersTest {
 
     @Test
     public void testQueryParameters() throws IOException {
-        try (TestHttpClient client = new TestHttpClient()) {
-            for (String[] queryStringPair: queryStrings) {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            for (String[] queryStringPair : queryStrings) {
                 runTest(client, queryStringPair[1], queryStringPair[0]);
             }
         }
@@ -98,7 +99,7 @@ public abstract class AbstractQueryParametersTest {
         OptionMap old = DefaultServer.getUndertowOptions();
         try {
             DefaultServer.setUndertowOptions(OptionMap.create(UndertowOptions.URL_CHARSET, "Shift_JIS"));
-            try (TestHttpClient client = new TestHttpClient()) {
+            try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
                 runTest(client, "unicode=%83e%83X%83g{unicode=>テスト}", "/path?unicode=%83e%83X%83g");
 
             }
@@ -116,7 +117,11 @@ public abstract class AbstractQueryParametersTest {
 
     }
 
-    private void runTest(final TestHttpClient client, final String expected, final String queryString) throws IOException {
-        Assert.assertEquals(expected, HttpClientUtils.readResponse(client.execute(new HttpGet(DefaultServer.getDefaultServerURL() + queryString))));
+    private void runTest(final CloseableHttpClient client, final String expected, final String queryString) throws IOException {
+        String uri = TestHttpClient.encodeURI(DefaultServer.getDefaultServerURL() + queryString);
+        client.execute(new HttpGet(uri), result -> {
+            Assert.assertEquals(expected, HttpClientUtils.readResponse(result));
+            return null;
+        });
     }
 }

@@ -26,8 +26,8 @@ import io.undertow.testutils.DefaultServer;
 import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -64,27 +64,30 @@ public class RedirectTestCase {
 
     @Test
     public void testRedirectHandler() throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path/a");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
+            client.execute(get, result -> {
+            Assert.assertEquals(StatusCodes.OK, result.getCode());
             HttpClientUtils.readResponse(result);
-            Assert.assertEquals("/target/path/a", message );
+            Assert.assertEquals("/target/path/a", message);
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/aabc");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
+            client.execute(get, result -> {
+            Assert.assertEquals(StatusCodes.OK, result.getCode());
             HttpClientUtils.readResponse(result);
-            Assert.assertEquals("/target/matched/aab", message );
+            Assert.assertEquals("/target/matched/aab", message);
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/somePath/aabc");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
+            client.execute(get, result -> {
+            Assert.assertEquals(StatusCodes.OK, result.getCode());
             HttpClientUtils.readResponse(result);
-            Assert.assertEquals("/target/matched/aab", message );
-        } finally {
-            client.getConnectionManager().shutdown();
+            Assert.assertEquals("/target/matched/aab", message);
+                return null;
+            });
         }
     }
 

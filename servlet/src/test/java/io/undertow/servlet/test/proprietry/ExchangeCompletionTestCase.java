@@ -16,8 +16,9 @@ import io.undertow.servlet.test.SimpleServletTestCase;
 import io.undertow.servlet.test.util.TestClassIntrospector;
 import io.undertow.testutils.DefaultServer;
 import io.undertow.testutils.TestHttpClient;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -104,27 +105,21 @@ public class ExchangeCompletionTestCase {
 
     @Test
     public void exchangeCompletionListenersSeeRequestAttributesEvenIfRequestBodyIsNotRead() throws IOException, InterruptedException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/servletContext/sync");
             post.setEntity(new StringEntity("some body that isn't read"));
-            client.execute(post);
+            client.execute(post, r -> null);
             assertEquals(A_VALUE, completedExchangeAttributes.poll(1, TimeUnit.SECONDS));
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 
     @Test
     public void exchangeCompletionListenersSeeRequestAttributesEvenIfRequestBodyIsNotReadAsync() throws IOException, InterruptedException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/servletContext/async");
             post.setEntity(new StringEntity("some body that isn't read"));
-            client.execute(post);
+            client.execute(post, r -> null);
             assertEquals(A_VALUE, completedExchangeAttributes.poll(1, TimeUnit.SECONDS));
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 

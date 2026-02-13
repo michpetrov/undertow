@@ -29,8 +29,8 @@ import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.Headers;
 import io.undertow.util.StatusCodes;
 import io.undertow.util.StringWriteChannelListener;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.BeforeClass;
@@ -62,9 +62,9 @@ public class PreChunkedResponseTransferCodingTestCase {
             @Override
             public void handleRequest(final HttpServerExchange exchange) {
                 try {
-                    if(connection == null) {
+                    if (connection == null) {
                         connection = exchange.getConnection();
-                    } else if(!DefaultServer.isAjp() && !DefaultServer.isProxy() && connection != exchange.getConnection()){
+                    } else if (!DefaultServer.isAjp() && !DefaultServer.isProxy() && connection != exchange.getConnection()) {
                         final OutputStream outputStream = exchange.getOutputStream();
                         outputStream.write("Connection not persistent".getBytes());
                         outputStream.close();
@@ -85,25 +85,28 @@ public class PreChunkedResponseTransferCodingTestCase {
         Assume.assumeFalse(DefaultServer.isH2()); //this test will still run under h2-upgrade, but will fail
         connection = null;
         HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
 
             generateMessage(0);
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             generateMessage(1);
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             generateMessage(1000);
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(message, HttpClientUtils.readResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+                return null;
+            });
         }
     }
 

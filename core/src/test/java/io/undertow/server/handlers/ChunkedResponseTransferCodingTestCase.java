@@ -27,8 +27,8 @@ import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.StatusCodes;
 import io.undertow.util.StringWriteChannelListener;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -64,27 +64,27 @@ public class ChunkedResponseTransferCodingTestCase {
         final BlockingHandler blockingHandler = new BlockingHandler();
         DefaultServer.setRootHandler(blockingHandler);
         blockingHandler.setRootHandler(Handlers.path().addExactPath("/path", new HttpHandler() {
-            @Override
-            public void handleRequest(final HttpServerExchange exchange) {
-                try {
-                    if(connection == null) {
-                        connection = exchange.getConnection();
-                    } else if(!DefaultServer.isAjp() && !DefaultServer.isProxy() && connection != exchange.getConnection()){
-                        final OutputStream outputStream = exchange.getOutputStream();
-                        outputStream.write("Connection not persistent".getBytes());
-                        outputStream.close();
-                        return;
+                    @Override
+                    public void handleRequest(final HttpServerExchange exchange) {
+                        try {
+                            if (connection == null) {
+                                connection = exchange.getConnection();
+                            } else if (!DefaultServer.isAjp() && !DefaultServer.isProxy() && connection != exchange.getConnection()) {
+                                final OutputStream outputStream = exchange.getOutputStream();
+                                outputStream.write("Connection not persistent".getBytes());
+                                outputStream.close();
+                                return;
+                            }
+                            new StringWriteChannelListener(message).setup(exchange.getResponseChannel());
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
                     }
-                    new StringWriteChannelListener(message).setup(exchange.getResponseChannel());
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-        })
+                })
                 .addExactPath("/buffers", new BlockingHandler(new HttpHandler() {
                     @Override
                     public void handleRequest(HttpServerExchange exchange) throws Exception {
-                        ByteBuffer[] buffers = new ByteBuffer[] {
+                        ByteBuffer[] buffers = new ByteBuffer[]{
                                 ByteBuffer.wrap("prefix".getBytes(StandardCharsets.UTF_8)),
                                 ByteBuffer.wrap("hello, ".getBytes(StandardCharsets.UTF_8)),
                                 ByteBuffer.wrap("world".getBytes(StandardCharsets.UTF_8)),
@@ -101,38 +101,39 @@ public class ChunkedResponseTransferCodingTestCase {
     @Test
     public void testMultiBufferWrite() throws IOException {
         HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/buffers");
-        TestHttpClient client = new TestHttpClient();
-        try {
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("hello, world", HttpClientUtils.readResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("hello, world", HttpClientUtils.readResponse(result));
+                return null;
+            });
         }
     }
 
     @Test
     public void sendHttpRequest() throws IOException {
         HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
-        TestHttpClient client = new TestHttpClient();
-        try {
-
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             generateMessage(0);
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             generateMessage(1);
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             generateMessage(1000);
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(message, HttpClientUtils.readResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+                return null;
+            });
         }
     }
 

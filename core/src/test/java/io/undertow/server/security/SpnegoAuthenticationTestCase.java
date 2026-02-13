@@ -28,9 +28,9 @@ import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.FlexBase64;
 import io.undertow.util.StatusCodes;
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.ietf.jgss.GSSContext;
 import org.ietf.jgss.GSSManager;
 import org.ietf.jgss.GSSName;
@@ -88,72 +88,74 @@ public class SpnegoAuthenticationTestCase extends AuthenticationTestBase {
 
     @Test
     public void testSpnegoSuccess() throws Exception {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL());
+            client.execute(get, result -> {
+                assertEquals(StatusCodes.UNAUTHORIZED, result.getCode());
+                Header[] values = result.getHeaders(WWW_AUTHENTICATE.toString());
+                String header = getAuthHeader(NEGOTIATE, values);
+                assertEquals(NEGOTIATE.toString(), header);
+                HttpClientUtils.readResponse(result);
+                return null;
+            });
 
-        final TestHttpClient client = new TestHttpClient();
-        HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL());
-        HttpResponse result = client.execute(get);
-        assertEquals(StatusCodes.UNAUTHORIZED, result.getStatusLine().getStatusCode());
-        Header[] values = result.getHeaders(WWW_AUTHENTICATE.toString());
-        String header = getAuthHeader(NEGOTIATE, values);
-        assertEquals(NEGOTIATE.toString(), header);
-        HttpClientUtils.readResponse(result);
+            Subject clientSubject = login("jduke", "theduke".toCharArray());
 
-        Subject clientSubject = login("jduke", "theduke".toCharArray());
+            Subject.doAs(clientSubject, new PrivilegedExceptionAction<Void>() {
 
-        Subject.doAs(clientSubject, new PrivilegedExceptionAction<Void>() {
+                @Override
+                public Void run() throws Exception {
+                    GSSManager gssManager = GSSManager.getInstance();
+                    GSSName serverName = gssManager.createName("HTTP/" + DefaultServer.getDefaultServerAddress().getHostString(), null);
 
-            @Override
-            public Void run() throws Exception {
-                GSSManager gssManager = GSSManager.getInstance();
-                GSSName serverName = gssManager.createName("HTTP/" + DefaultServer.getDefaultServerAddress().getHostString(), null);
+                    GSSContext context = gssManager.createContext(serverName, SPNEGO, null, GSSContext.DEFAULT_LIFETIME);
 
-                GSSContext context = gssManager.createContext(serverName, SPNEGO, null, GSSContext.DEFAULT_LIFETIME);
+                    byte[] token = new byte[0];
+                    var ref = new Object() {
+                        boolean gotOur200 = false;
+                    };
 
-                byte[] token = new byte[0];
+                    while (!context.isEstablished()) {
+                        token = context.initSecContext(token, 0, token.length);
 
-                boolean gotOur200 = false;
-                while (!context.isEstablished()) {
-                    token = context.initSecContext(token, 0, token.length);
+                        if (token != null && token.length > 0) {
+                            HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL());
+                            get.addHeader(AUTHORIZATION.toString(), NEGOTIATE + " " + FlexBase64.encodeString(token, false));
+                            Header[] headers = client.execute(get, result -> {
+                                Header[] authHeaders = result.getHeaders(WWW_AUTHENTICATE.toString());
+                                if (result.getCode() == StatusCodes.OK) {
+                                    Header[] values = result.getHeaders("ProcessedBy");
+                                    assertEquals(1, values.length);
+                                    assertEquals("ResponseHandler", values[0].getValue());
+                                    HttpClientUtils.readResponse(result);
+                                    assertSingleNotificationType(EventType.AUTHENTICATED);
+                                    ref.gotOur200 = true;
+                                } else if (result.getCode() == StatusCodes.UNAUTHORIZED) {
+                                    assertTrue("We did get a header.", authHeaders.length > 0);
+                                    HttpClientUtils.readResponse(result);
+                                } else {
+                                    fail(String.format("Unexpected status code %d", result.getCode()));
+                                }
+                                return authHeaders;
+                            });
+                            if (headers.length > 0) {
+                                String header = getAuthHeader(NEGOTIATE, headers);
 
-                    if (token != null && token.length > 0) {
-                        HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL());
-                        get.addHeader(AUTHORIZATION.toString(), NEGOTIATE + " " + FlexBase64.encodeString(token, false));
-                        HttpResponse result = client.execute(get);
-
-                        Header[] headers = result.getHeaders(WWW_AUTHENTICATE.toString());
-                        if (headers.length > 0) {
-                            String header = getAuthHeader(NEGOTIATE, headers);
-
-                            byte[] headerBytes = header.getBytes(StandardCharsets.US_ASCII);
-                            // FlexBase64.decode() returns byte buffer, which can contain backend array of greater size.
-                            // when on such ByteBuffer is called array(), it returns the underlying byte array including the 0 bytes
-                            // at the end, which makes the token invalid. => using Base64 mime decoder, which returnes directly properly sized byte[].
-                            token = Base64.getMimeDecoder().decode(Arrays.copyOfRange(headerBytes, NEGOTIATE.toString().length() + 1, headerBytes.length));
-                        }
-
-                        if (result.getStatusLine().getStatusCode() == StatusCodes.OK) {
-                            Header[] values = result.getHeaders("ProcessedBy");
-                            assertEquals(1, values.length);
-                            assertEquals("ResponseHandler", values[0].getValue());
-                            HttpClientUtils.readResponse(result);
-                            assertSingleNotificationType(EventType.AUTHENTICATED);
-                            gotOur200 = true;
-                        } else if (result.getStatusLine().getStatusCode() == StatusCodes.UNAUTHORIZED) {
-                            assertTrue("We did get a header.", headers.length > 0);
-
-                            HttpClientUtils.readResponse(result);
-
-                        } else {
-                            fail(String.format("Unexpected status code %d", result.getStatusLine().getStatusCode()));
+                                byte[] headerBytes = header.getBytes(StandardCharsets.US_ASCII);
+                                // FlexBase64.decode() returns byte buffer, which can contain backend array of greater size.
+                                // when on such ByteBuffer is called array(), it returns the underlying byte array including the 0 bytes
+                                // at the end, which makes the token invalid. => using Base64 mime decoder, which returnes directly properly sized byte[].
+                                token = Base64.getMimeDecoder().decode(Arrays.copyOfRange(headerBytes, NEGOTIATE.toString().length() + 1, headerBytes.length));
+                            }
                         }
                     }
-                }
 
-                assertTrue(gotOur200);
-                assertTrue(context.isEstablished());
-                return null;
-            }
-        });
+                    assertTrue(ref.gotOur200);
+                    assertTrue(context.isEstablished());
+                    return null;
+                }
+            });
+        }
     }
 
     private class SubjectFactory implements GSSAPIServerSubjectFactory {

@@ -29,9 +29,9 @@ import io.undertow.testutils.ProxyIgnore;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.StatusCodes;
 
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -50,12 +50,12 @@ public class PredicatedHandlersTestCase {
                 Handlers.predicates(
 
                         PredicatedHandlersParser.parse(
-                                        "path(/skipallrules) and true -> done\n" +
+                                "path(/skipallrules) and true -> done\n" +
                                         "method(GET) -> set(attribute='%{o,type}', value=get) \r\n" +
                                         "regex('(.*).css') -> {rewrite['${1}.xcss'];set(attribute='%{o,chained}', value=true)} \n" +
                                         "regex('(.*).redirect$') -> redirect['${1}.redirected']\n\n\n\n\n" +
                                         "set[attribute='%{o,someHeader}', value=always]\n" +
-                                        "#ImJust a Comment\n"+
+                                        "#ImJust a Comment\n" +
                                         "path-template('/foo/{bar}/{f}') -> set[attribute='%{o,template}', value='${bar}']\r\n" +
                                         "path-template('/bar->foo') -> redirect(/);" +
                                         "regex('(.*).css') -> set[attribute='%{o,css}', value='true'] else set[attribute='%{o,css}', value='false']; " +
@@ -67,62 +67,70 @@ public class PredicatedHandlersTestCase {
                             }
                         }));
 
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/foo/a/b");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
-            Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
-            Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
-            Assert.assertEquals("false", result.getHeaders("css")[0].getValue());
-            Assert.assertEquals("/foo/a/b", response);
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
+                Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
+                Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
+                Assert.assertEquals("false", result.getHeaders("css")[0].getValue());
+                Assert.assertEquals("/foo/a/b", response);
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path/a/b");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("param1=a&param2=b", result.getHeaders("result")[0].getValue());
-            Assert.assertEquals("/newpath", response);
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("param1=a&param2=b", result.getHeaders("result")[0].getValue());
+                Assert.assertEquals("/newpath", response);
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/foo/a/b.css");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
-            Assert.assertEquals("true", result.getHeaders("chained")[0].getValue());
-            Assert.assertEquals("/foo/a/b.xcss", response);
-            Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
-            Assert.assertEquals("true", result.getHeaders("css")[0].getValue());
-            Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
+                Assert.assertEquals("true", result.getHeaders("chained")[0].getValue());
+                Assert.assertEquals("/foo/a/b.xcss", response);
+                Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
+                Assert.assertEquals("true", result.getHeaders("css")[0].getValue());
+                Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/foo/a/b.redirect");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
-            Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
-            Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
-            Assert.assertEquals("/foo/a/b.redirected", response);
-
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
+                Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
+                Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
+                Assert.assertEquals("/foo/a/b.redirected", response);
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/skipallrules");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals(0, result.getHeaders("someHeader").length);
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals(0, result.getHeaders("someHeader").length);
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/restart");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
-            Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
-            Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
-            Assert.assertEquals("/foo/a/b", response);
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
+                Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
+                Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
+                Assert.assertEquals("/foo/a/b", response);
+                return null;
+            });
         }
     }
 
@@ -132,22 +140,21 @@ public class PredicatedHandlersTestCase {
                 Handlers.predicates(
 
                         PredicatedHandlersParser.parse(
-                                        "path( foo ) -> rewrite( bar )", getClass().getClassLoader()), new HttpHandler() {
+                                "path( foo ) -> rewrite( bar )", getClass().getClassLoader()), new HttpHandler() {
                             @Override
                             public void handleRequest(HttpServerExchange exchange) throws Exception {
                                 exchange.getResponseSender().send(exchange.getRelativePath());
                             }
                         }));
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/foo");
 
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("/bar", response);
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("/bar", response);
+                return null;
+            });
         }
     }
 
@@ -161,7 +168,7 @@ public class PredicatedHandlersTestCase {
             }
         });
         handler.handleRequest(e);
-        Assert.assertEquals("foo'bar",e.getResponseHeaders().get("test-header").getFirst());
+        Assert.assertEquals("foo'bar", e.getResponseHeaders().get("test-header").getFirst());
     }
 
     @Test
@@ -170,7 +177,7 @@ public class PredicatedHandlersTestCase {
                 Handlers.predicates(
 
                         PredicatedHandlersParser.parse(
-                                        "path(/skipallrules)\n and true -> done\n" +
+                                "path(/skipallrules)\n and true -> done\n" +
                                         "method(GET) -> set(attribute='%{o,type}', value=get) \r\n" +
                                         "regex('(.*).css') -> {rewrite['${1}.xcss'];set(attribute='%{o,chained}', value=true)} \n" +
                                         "regex('(.*).redirect$') -> redirect['${1}.redirected']\n\n\n\n\n" +
@@ -186,66 +193,75 @@ public class PredicatedHandlersTestCase {
                             }
                         }));
 
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/foo/a/b");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
-            Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
-            Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
-            Assert.assertEquals("false", result.getHeaders("css")[0].getValue());
-            Assert.assertEquals("/foo/a/b", response);
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
+                Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
+                Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
+                Assert.assertEquals("false", result.getHeaders("css")[0].getValue());
+                Assert.assertEquals("/foo/a/b", response);
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path/a/b");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("param1=a&param2=b", result.getHeaders("result")[0].getValue());
-            Assert.assertEquals("/newpath", response);
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("param1=a&param2=b", result.getHeaders("result")[0].getValue());
+                Assert.assertEquals("/newpath", response);
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/foo/a/b.css");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
-            Assert.assertEquals("true", result.getHeaders("chained")[0].getValue());
-            Assert.assertEquals("/foo/a/b.xcss", response);
-            Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
-            Assert.assertEquals("true", result.getHeaders("css")[0].getValue());
-            Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
+                Assert.assertEquals("true", result.getHeaders("chained")[0].getValue());
+                Assert.assertEquals("/foo/a/b.xcss", response);
+                Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
+                Assert.assertEquals("true", result.getHeaders("css")[0].getValue());
+                Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/foo/a/b.redirect");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
-            Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
-            Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
-            Assert.assertEquals("/foo/a/b.redirected", response);
-
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
+                Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
+                Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
+                Assert.assertEquals("/foo/a/b.redirected", response);
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/skipallrules");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals(0, result.getHeaders("someHeader").length);
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals(0, result.getHeaders("someHeader").length);
+                return null;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/restart");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            response = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
-            Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
-            Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
-            Assert.assertEquals("/foo/a/b", response);
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String response = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("get", result.getHeaders("type")[0].getValue());
+                Assert.assertEquals("always", result.getHeaders("someHeader")[0].getValue());
+                Assert.assertEquals("a", result.getHeaders("template")[0].getValue());
+                Assert.assertEquals("/foo/a/b", response);
+                return null;
+            });
         }
     }
 
-    @Test @ProxyIgnore
+    @Test
+    @ProxyIgnore
     public void testReasonPhrase() throws IOException {
         DefaultServer.setRootHandler(
                 Handlers.predicates(
@@ -257,21 +273,20 @@ public class PredicatedHandlersTestCase {
                                 exchange.getResponseSender().send(exchange.getRelativePath());
                             }
                         }));
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/test");
 
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals("test-my-patience", result.getStatusLine().getReasonPhrase());
-            Assert.assertEquals(480, result.getStatusLine().getStatusCode());
-
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals("test-my-patience", result.getReasonPhrase());
+                Assert.assertEquals(480, result.getCode());
+                return null;
+            });
         }
 
     }
 
-    @Test @ProxyIgnore
+    @Test
+    @ProxyIgnore
     public void testDefaultResponse() throws IOException {
         DefaultServer.setRootHandler(
                 Handlers.predicates(
@@ -282,31 +297,31 @@ public class PredicatedHandlersTestCase {
                                 exchange.getResponseSender().send(exchange.getRelativePath());
                             }
                         }));
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/test");
 
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals("test-my-patience", result.getStatusLine().getReasonPhrase());
-            Assert.assertEquals(208, result.getStatusLine().getStatusCode());
-            final String body = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("Dont-Touch", body);
-            Header[] hdrs = result.getHeaders("Content-Length");
-            Assert.assertNotNull(hdrs);
-            Assert.assertEquals(1, hdrs.length);
-            Assert.assertNotNull(hdrs[0]);
-            Assert.assertEquals(hdrs[0].getValue(), ""+"Dont-Touch".length());
-            hdrs = result.getHeaders("Content-Type");
-            Assert.assertNotNull(hdrs);
-            Assert.assertEquals(1, hdrs.length);
-            Assert.assertNotNull(hdrs[0]);
-            Assert.assertEquals(hdrs[0].getValue(), "text/html");
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals("test-my-patience", result.getReasonPhrase());
+                Assert.assertEquals(208, result.getCode());
+                final String body = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("Dont-Touch", body);
+                Header[] hdrs = result.getHeaders("Content-Length");
+                Assert.assertNotNull(hdrs);
+                Assert.assertEquals(1, hdrs.length);
+                Assert.assertNotNull(hdrs[0]);
+                Assert.assertEquals(hdrs[0].getValue(), "" + "Dont-Touch".length());
+                hdrs = result.getHeaders("Content-Type");
+                Assert.assertNotNull(hdrs);
+                Assert.assertEquals(1, hdrs.length);
+                Assert.assertNotNull(hdrs[0]);
+                Assert.assertEquals(hdrs[0].getValue(), "text/html");
+                return null;
+            });
         }
     }
 
-    @Test @ProxyIgnore
+    @Test
+    @ProxyIgnore
     public void testCustomTypeResponse() throws IOException {
         DefaultServer.setRootHandler(
                 Handlers.predicates(
@@ -317,27 +332,26 @@ public class PredicatedHandlersTestCase {
                                 exchange.getResponseSender().send(exchange.getRelativePath());
                             }
                         }));
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/test");
 
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals("test-my-patience", result.getStatusLine().getReasonPhrase());
-            Assert.assertEquals(208, result.getStatusLine().getStatusCode());
-            final String body = HttpClientUtils.readResponse(result);
-            Assert.assertEquals("Dont-Touch", body);
-            Header[] hdrs = result.getHeaders("Content-Length");
-            Assert.assertNotNull(hdrs);
-            Assert.assertEquals(1, hdrs.length);
-            Assert.assertNotNull(hdrs[0]);
-            Assert.assertEquals(hdrs[0].getValue(), ""+"Dont-Touch".length());
-            hdrs = result.getHeaders("Content-Type");
-            Assert.assertNotNull(hdrs);
-            Assert.assertEquals(1, hdrs.length);
-            Assert.assertNotNull(hdrs[0]);
-            Assert.assertEquals(hdrs[0].getValue(), "text/plain");
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals("test-my-patience", result.getReasonPhrase());
+                Assert.assertEquals(208, result.getCode());
+                final String body = HttpClientUtils.readResponse(result);
+                Assert.assertEquals("Dont-Touch", body);
+                Header[] hdrs = result.getHeaders("Content-Length");
+                Assert.assertNotNull(hdrs);
+                Assert.assertEquals(1, hdrs.length);
+                Assert.assertNotNull(hdrs[0]);
+                Assert.assertEquals(hdrs[0].getValue(), "" + "Dont-Touch".length());
+                hdrs = result.getHeaders("Content-Type");
+                Assert.assertNotNull(hdrs);
+                Assert.assertEquals(1, hdrs.length);
+                Assert.assertNotNull(hdrs[0]);
+                Assert.assertEquals(hdrs[0].getValue(), "text/plain");
+                return null;
+            });
         }
     }
 }

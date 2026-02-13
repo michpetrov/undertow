@@ -9,9 +9,10 @@ import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.ProxyIgnore;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.conn.PoolingClientConnectionManager;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -44,11 +45,11 @@ public class LoadBalancerConnectionPoolingTestCase {
     public static void before() throws Exception {
 
         ProxyHandler proxyHandler = ProxyHandler.builder().setProxyClient(new LoadBalancingProxyClient()
-                .setConnectionsPerThread(1)
-                .setSoftMaxConnectionsPerThread(0)
-                .setTtl(TTL)
-                .setMaxQueueSize(1000)
-                .addHost(new URI("http", null, host, port, null, null, null), "s1"))
+                        .setConnectionsPerThread(1)
+                        .setSoftMaxConnectionsPerThread(0)
+                        .setTtl(TTL)
+                        .setMaxQueueSize(1000)
+                        .addHost(new URI("http", null, host, port, null, null, null), "s1"))
                 .setMaxRequestTime(10000).build();
 
         // Default server uses 8 io threads which is hard to test against
@@ -63,7 +64,7 @@ public class LoadBalancerConnectionPoolingTestCase {
             @Override
             public void handleRequest(HttpServerExchange exchange) throws Exception {
                 final ServerConnection con = exchange.getConnection();
-                if(!activeConnections.contains(con)) {
+                if (!activeConnections.contains(con)) {
                     System.out.println("added " + con);
                     activeConnections.add(con);
                     con.addCloseListener(new ServerConnection.CloseListener() {
@@ -84,28 +85,31 @@ public class LoadBalancerConnectionPoolingTestCase {
         // sleep 1 s to prevent BindException (Address already in use) when running the CI
         try {
             Thread.sleep(1000);
-        } catch (InterruptedException ignore) {}
+        } catch (InterruptedException ignore) {
+        }
     }
 
     @Test
     public void shouldReduceConnectionPool() throws Exception {
-        ExecutorService executorService = Executors.newFixedThreadPool(10);
-        PoolingClientConnectionManager conman = new PoolingClientConnectionManager();
-        conman.setDefaultMaxPerRoute(20);
-        final TestHttpClient client = new TestHttpClient(conman);
+        PoolingHttpClientConnectionManager conman = PoolingHttpClientConnectionManagerBuilder.create()
+                        .setMaxConnPerRoute(20).build();
         int requests = 20;
         final CountDownLatch latch = new CountDownLatch(requests);
         long ttlStartExpire = TTL + System.currentTimeMillis();
-        try {
+        // TODO: put into try declaration with Java 19
+        ExecutorService executorService = Executors.newFixedThreadPool(10);
+        try (CloseableHttpClient client = TestHttpClient.custom().setConnectionManager(conman).build()) {
             for (int i = 0; i < requests; ++i) {
                 executorService.submit(new Runnable() {
                     @Override
                     public void run() {
                         HttpGet get = new HttpGet("http://" + host + ":" + (port + 1));
                         try {
-                            HttpResponse response = client.execute(get);
-                            Assert.assertEquals(StatusCodes.OK, response.getStatusLine().getStatusCode());
-                            HttpClientUtils.readResponse(response);
+                            client.execute(get, response -> {
+                                Assert.assertEquals(StatusCodes.OK, response.getCode());
+                                HttpClientUtils.readResponse(response);
+                                return response;
+                            });
                         } catch (IOException e) {
                             throw new RuntimeException(e);
                         } finally {
@@ -114,18 +118,15 @@ public class LoadBalancerConnectionPoolingTestCase {
                     }
                 });
             }
-            if(!latch.await(2000, TimeUnit.MILLISECONDS)) {
+            if (!latch.await(2000, TimeUnit.MILLISECONDS)) {
                 Assert.fail();
             }
-        } finally {
-            client.getConnectionManager().shutdown();
-            executorService.shutdown();
         }
 
-        if(activeConnections.size() != 1) {
+        if (activeConnections.size() != 1) {
             //if the test is slow this line could be hit after the expire time
             //uncommon, but we guard against it to prevent intermittent failures
-            if(System.currentTimeMillis() < ttlStartExpire) {
+            if (System.currentTimeMillis() < ttlStartExpire) {
                 Assert.fail("there should still be a connection");
             }
         }

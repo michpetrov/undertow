@@ -23,10 +23,9 @@ import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.testutils.DefaultServer;
 import io.undertow.testutils.ProxyIgnore;
-import org.apache.http.HttpHost;
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.impl.client.ProxyClient;
-import org.apache.http.protocol.HTTP;
+import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
+import org.apache.hc.client5.http.impl.classic.ProxyClient;
+import org.apache.hc.core5.http.HttpHost;
 import org.junit.Assert;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -38,6 +37,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 
 /**
  * @author Stuart Douglas
@@ -81,19 +81,19 @@ public class HttpTunnelingViaConnectTestCase {
     @Test
     public void testConnectViaProxy() throws Exception {
 
-        final HttpHost proxy = new HttpHost(DefaultServer.getHostAddress("default"), DefaultServer.getHostPort("default") + 1, "http");
-        final HttpHost target = new HttpHost(DefaultServer.getHostAddress("default"), DefaultServer.getHostPort("default"), "http");
+        final HttpHost proxy = new HttpHost("http", DefaultServer.getHostAddress("default"), DefaultServer.getHostPort("default") + 1);
+        final HttpHost target = new HttpHost("http", DefaultServer.getHostAddress("default"), DefaultServer.getHostPort("default"));
         ProxyClient proxyClient = new ProxyClient();
-        Socket socket = proxyClient.tunnel(proxy, target, new UsernamePasswordCredentials("a", "b"));
+        Socket socket = proxyClient.tunnel(proxy, target, new UsernamePasswordCredentials("a", "b".toCharArray()));
         try {
-            Writer out = new OutputStreamWriter(socket.getOutputStream(), HTTP.DEF_CONTENT_CHARSET);
+            Writer out = new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.ISO_8859_1);
             out.write("GET / HTTP/1.1\r\n");
             out.write("Host: " + target.toHostString() + "\r\n");
             out.write("Connection: close\r\n");
             out.write("\r\n");
             out.flush();
             BufferedReader in = new BufferedReader(
-                    new InputStreamReader(socket.getInputStream(), HTTP.DEF_CONTENT_CHARSET));
+                    new InputStreamReader(socket.getInputStream(), StandardCharsets.ISO_8859_1));
             String line = null;
             boolean found = false;
             while ((line = in.readLine()) != null) {

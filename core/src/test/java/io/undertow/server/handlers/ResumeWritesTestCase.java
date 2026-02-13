@@ -18,29 +18,30 @@
 
 package io.undertow.server.handlers;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-
 import io.undertow.server.ConduitWrapper;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.testutils.DefaultServer;
 import io.undertow.testutils.HttpClientUtils;
+import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.ConduitFactory;
 import io.undertow.util.Headers;
-import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.HttpVersion;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.params.CoreProtocolPNames;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.ClassicHttpRequest;
+import org.apache.hc.core5.http.HttpVersion;
+import org.apache.hc.core5.http.io.support.ClassicRequestBuilder;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.xnio.channels.StreamSourceChannel;
 import org.xnio.conduits.AbstractStreamSinkConduit;
 import org.xnio.conduits.StreamSinkConduit;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 
 /**
  * Test that uses a fake channel that returns 0 a lot, to make sure that resume writes works correclty
@@ -64,20 +65,23 @@ public class ResumeWritesTestCase {
             }
         });
 
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
+                return null;
+            });
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
+                return null;
+            });
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
+                return null;
+            });
         }
     }
 
@@ -92,23 +96,25 @@ public class ResumeWritesTestCase {
             }
         });
 
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
+                return null;
+            });
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
+                return null;
+            });
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
+                return null;
+            });
         }
     }
-
 
 
     @Test
@@ -121,21 +127,23 @@ public class ResumeWritesTestCase {
             }
         });
 
-        TestHttpClient client = new TestHttpClient();
-        try {
-            HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
-            get.getParams().setParameter(CoreProtocolPNames.PROTOCOL_VERSION, HttpVersion.HTTP_1_0);
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            ClassicHttpRequest get = ClassicRequestBuilder.get(DefaultServer.getDefaultServerURL() + "/path").setVersion(HttpVersion.HTTP_1_0).build();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
+                return null;
+            });
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
+                return null;
+            });
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
+                return null;
+            });
         }
     }
 
@@ -150,31 +158,31 @@ public class ResumeWritesTestCase {
 
                 @Override
                 public long transferFrom(final FileChannel src, final long position, final long count) throws IOException {
-                    if(c++ % 100 != 90) return 0;
+                    if (c++ % 100 != 90) return 0;
                     return super.transferFrom(src, position, count);
                 }
 
                 @Override
                 public long transferFrom(final StreamSourceChannel source, final long count, final ByteBuffer throughBuffer) throws IOException {
-                    if(c++ % 100 != 90) return 0;
+                    if (c++ % 100 != 90) return 0;
                     return super.transferFrom(source, count, throughBuffer);
                 }
 
                 @Override
                 public int write(final ByteBuffer src) throws IOException {
-                    if(c++ % 100 != 90) return 0;
+                    if (c++ % 100 != 90) return 0;
                     return super.write(src);
                 }
 
                 @Override
                 public long write(final ByteBuffer[] srcs, final int offs, final int len) throws IOException {
-                    if(c++ % 100 != 90) return 0;
+                    if (c++ % 100 != 90) return 0;
                     return super.write(srcs, offs, len);
                 }
 
                 @Override
                 public boolean flush() throws IOException {
-                    if(c++ % 100 != 90) return false;
+                    if (c++ % 100 != 90) return false;
                     return super.flush();
                 }
             };

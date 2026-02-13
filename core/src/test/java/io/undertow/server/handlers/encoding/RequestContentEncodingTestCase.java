@@ -26,13 +26,13 @@ import java.util.Base64;
 import java.util.Random;
 import java.util.zip.Deflater;
 
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.ByteArrayEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -79,7 +79,7 @@ public class RequestContentEncodingTestCase {
                 exchange.getRequestReceiver().receiveFullBytes(new Receiver.FullBytesCallback() {
                     @Override
                     public void handle(HttpServerExchange exchange, byte[] message) {
-                        Assert.assertTrue(exchange.getRequestContentLength()>0);
+                        Assert.assertTrue(exchange.getRequestContentLength() > 0);
                         exchange.getResponseSender().send(ByteBuffer.wrap(message));
                     }
                 });
@@ -136,22 +136,24 @@ public class RequestContentEncodingTestCase {
     }
 
     private static final String MESSAGE = "COMPRESSED I'AM";
-    private static final byte[] COMPRESSED_MESSAGE = { 0x78, (byte) (0x9C & 0xFF), 0x73, (byte) (0xF6 & 0xFF),
+    private static final byte[] COMPRESSED_MESSAGE = {0x78, (byte) (0x9C & 0xFF), 0x73, (byte) (0xF6 & 0xFF),
             (byte) (0xF7 & 0xFF), 0x0D, 0x08, 0x72, 0x0D, 0x0E, 0x76, 0x75, 0x51, (byte) (0xF0 & 0xFF), 0x54, 0x77,
-            (byte) (0xF4 & 0xFF), 0x05, 0x00, 0x22, 0x35, 0x04, 0x14 };
+            (byte) (0xF4 & 0xFF), 0x05, 0x00, 0x22, 0x35, 0x04, 0x14};
 
     @Test
     public void testDeflateWithNoWrapping() throws IOException {
         HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/decode");
-        post.setEntity(new ByteArrayEntity(COMPRESSED_MESSAGE));
+        post.setEntity(new ByteArrayEntity(COMPRESSED_MESSAGE, ContentType.APPLICATION_ZIP_COMPRESSED));
         post.addHeader(Headers.CONTENT_ENCODING_STRING, "deflate");
 
         try (CloseableHttpClient client = HttpClientBuilder.create().disableContentCompression().build()) {
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String sb = HttpClientUtils.readResponse(result);
-            Assert.assertEquals(MESSAGE.length(), sb.length());
-            Assert.assertEquals(MESSAGE, sb);
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String sb = HttpClientUtils.readResponse(result);
+                Assert.assertEquals(MESSAGE.length(), sb.length());
+                Assert.assertEquals(MESSAGE, sb);
+                return result;
+            });
         }
     }
 
@@ -173,38 +175,45 @@ public class RequestContentEncodingTestCase {
 
         byte[] bodyBytes = Arrays.copyOf(output, len);
         HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/decode");
-        post.setEntity(new ByteArrayEntity(bodyBytes));
+        post.setEntity(new ByteArrayEntity(bodyBytes, ContentType.TEXT_PLAIN));
         post.addHeader(Headers.CONTENT_ENCODING_STRING, "deflate");
 
         try (CloseableHttpClient client = HttpClientBuilder.create().disableContentCompression().build()) {
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String sb = HttpClientUtils.readResponse(result);
-            Assert.assertEquals(randomString.length(), sb.length());
-            Assert.assertEquals(randomString, sb);
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String sb = HttpClientUtils.readResponse(result);
+                Assert.assertEquals(randomString.length(), sb.length());
+                Assert.assertEquals(randomString, sb);
+                return result;
+            });
         }
     }
 
     public void runTest(final String theMessage, String encoding) throws IOException {
-        try (CloseableHttpClient client = HttpClientBuilder.create().disableContentCompression().build()){
+        try (CloseableHttpClient client = HttpClientBuilder.create().disableContentCompression().build()) {
             message = theMessage;
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/encode");
             get.setHeader(Headers.ACCEPT_ENCODING_STRING, encoding);
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Header[] header = result.getHeaders(Headers.CONTENT_ENCODING_STRING);
-            Assert.assertEquals(encoding, header[0].getValue());
-            byte[] body = HttpClientUtils.readRawResponse(result);
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Header[] header = result.getHeaders(Headers.CONTENT_ENCODING_STRING);
+                Assert.assertEquals(encoding, header[0].getValue());
+                byte[] body = HttpClientUtils.readRawResponse(result);
 
-            HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/decode");
-            post.setEntity(new ByteArrayEntity(body));
-            post.addHeader(Headers.CONTENT_ENCODING_STRING, encoding);
 
-            result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String sb = HttpClientUtils.readResponse(result);
-            Assert.assertEquals(theMessage.length(), sb.length());
-            Assert.assertEquals(theMessage, sb);
+                HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/decode");
+                post.setEntity(new ByteArrayEntity(body, ContentType.TEXT_PLAIN));
+                post.addHeader(Headers.CONTENT_ENCODING_STRING, encoding);
+
+                client.execute(post, result1 -> {
+                    Assert.assertEquals(StatusCodes.OK, result1.getCode());
+                    String sb = HttpClientUtils.readResponse(result1);
+                    Assert.assertEquals(theMessage.length(), sb.length());
+                    Assert.assertEquals(theMessage, sb);
+                    return result1;
+                });
+                return result;
+            });
 
         }
     }

@@ -21,6 +21,7 @@ package io.undertow.server.handlers;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,9 +37,9 @@ import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.Headers;
 import io.undertow.util.StatusCodes;
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -173,15 +174,12 @@ public class SenderTestCase {
             sb.append("a");
         }
         HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/lots?blocking=false");
-        TestHttpClient client = new TestHttpClient();
-        try {
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-
-            Assert.assertEquals(sb.toString(), HttpClientUtils.readResponse(result));
-
-        } finally {
-            client.getConnectionManager().shutdown();
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(sb.toString(), HttpClientUtils.readResponse(result));
+                return null;
+            });
         }
     }
 
@@ -192,21 +190,25 @@ public class SenderTestCase {
             sb.append("a");
         }
         HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/transfer?blocking=false");
-        TestHttpClient client = new TestHttpClient();
-        try {
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Path file = Paths.get(SenderTestCase.class.getResource(SenderTestCase.class.getSimpleName() + ".class").toURI());
-            long length = Files.size(file);
-            byte[] data = new byte[(int) length * TXS];
-            for (int i = 0; i < TXS; i++) {
-                try(DataInputStream is = new DataInputStream(Files.newInputStream(file))) {
-                    is.readFully(data, (int) (i * length), (int) length);
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Path file = null;
+                try {
+                    file = Paths.get(SenderTestCase.class.getResource(SenderTestCase.class.getSimpleName() + ".class").toURI());
+                } catch (URISyntaxException e) {
+                    throw new RuntimeException(e);
                 }
-            }
-            Assert.assertArrayEquals(data, HttpClientUtils.readRawResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+                long length = Files.size(file);
+                byte[] data = new byte[(int) length * TXS];
+                for (int i = 0; i < TXS; i++) {
+                    try (DataInputStream is = new DataInputStream(Files.newInputStream(file))) {
+                        is.readFully(data, (int) (i * length), (int) length);
+                    }
+                }
+                Assert.assertArrayEquals(data, HttpClientUtils.readRawResponse(result));
+                return null;
+            });
         }
     }
 
@@ -217,21 +219,25 @@ public class SenderTestCase {
             sb.append("a");
         }
         HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/transfer?blocking=true");
-        TestHttpClient client = new TestHttpClient();
-        try {
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Path file = Paths.get(SenderTestCase.class.getResource(SenderTestCase.class.getSimpleName() + ".class").toURI());
-            long length = Files.size(file);
-            byte[] data = new byte[(int) length * TXS];
-            for (int i = 0; i < TXS; i++) {
-                try(DataInputStream is = new DataInputStream(Files.newInputStream(file))) {
-                    is.readFully(data, (int) (i * length), (int) length);
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Path file = null;
+                try {
+                    file = Paths.get(SenderTestCase.class.getResource(SenderTestCase.class.getSimpleName() + ".class").toURI());
+                } catch (URISyntaxException e) {
+                    throw new RuntimeException(e);
                 }
-            }
-            Assert.assertArrayEquals(data, HttpClientUtils.readRawResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+                long length = Files.size(file);
+                byte[] data = new byte[(int) length * TXS];
+                for (int i = 0; i < TXS; i++) {
+                    try (DataInputStream is = new DataInputStream(Files.newInputStream(file))) {
+                        is.readFully(data, (int) (i * length), (int) length);
+                    }
+                }
+                Assert.assertArrayEquals(data, HttpClientUtils.readRawResponse(result));
+                return null;
+            });
         }
     }
 
@@ -243,32 +249,28 @@ public class SenderTestCase {
             sb.append("a");
         }
         HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/lots?blocking=true");
-        TestHttpClient client = new TestHttpClient();
-        try {
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
 
-            Assert.assertEquals(sb.toString(), HttpClientUtils.readResponse(result));
-
-        } finally {
-            client.getConnectionManager().shutdown();
+                Assert.assertEquals(sb.toString(), HttpClientUtils.readResponse(result));
+                return null;
+            });
         }
     }
 
     @Test
     public void testSenderSetsContentLength() throws IOException {
         HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/fixed");
-        TestHttpClient client = new TestHttpClient();
-        try {
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
-            Header[] header = result.getHeaders(Headers.CONTENT_LENGTH_STRING);
-            Assert.assertEquals(1, header.length);
-            Assert.assertEquals("" + HELLO_WORLD.length(), header[0].getValue());
-
-        } finally {
-            client.getConnectionManager().shutdown();
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(HELLO_WORLD, HttpClientUtils.readResponse(result));
+                Header[] header = result.getHeaders(Headers.CONTENT_LENGTH_STRING);
+                Assert.assertEquals(1, header.length);
+                Assert.assertEquals("" + HELLO_WORLD.length(), header[0].getValue());
+                return null;
+            });
         }
     }
 }

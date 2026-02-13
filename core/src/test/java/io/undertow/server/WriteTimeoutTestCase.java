@@ -28,8 +28,8 @@ import java.util.concurrent.TimeUnit;
 import io.undertow.testutils.DefaultServer;
 import io.undertow.testutils.HttpOneOnly;
 import io.undertow.testutils.TestHttpClient;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -99,7 +99,7 @@ public class WriteTimeoutTestCase {
                                 exception = e;
                                 errorLatch.countDown();
                             }
-                            if(!buffer.hasRemaining()) {
+                            if (!buffer.hasRemaining()) {
                                 count++;
                                 buffer = originalBuffer.duplicate();
                             }
@@ -111,12 +111,12 @@ public class WriteTimeoutTestCase {
             }
         });
 
-        final TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL());
             try {
-                HttpResponse result = client.execute(get);
-                InputStream content = result.getEntity().getContent();
+                InputStream content = client.execute(get, result ->
+                        result.getEntity().getContent()
+                );
                 byte[] buffer = new byte[512];
                 int r = 0;
                 while ((r = content.read(buffer)) > 0) {
@@ -134,8 +134,6 @@ public class WriteTimeoutTestCase {
                     Assert.fail("Write did not time out");
                 }
             }
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 }

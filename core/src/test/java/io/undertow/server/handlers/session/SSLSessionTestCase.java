@@ -33,9 +33,11 @@ import io.undertow.testutils.HttpClientUtils;
 import io.undertow.testutils.ProxyIgnore;
 import io.undertow.util.HttpString;
 import io.undertow.util.StatusCodes;
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.cookie.BasicCookieStore;
+import org.apache.hc.client5.http.cookie.CookieStore;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.Header;;
 import io.undertow.testutils.TestHttpClient;
 import org.junit.Assert;
 import org.junit.Test;
@@ -55,8 +57,10 @@ public class SSLSessionTestCase {
 
     @Test
     public void testSslSession() throws IOException {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        CookieStore cookieStore = new BasicCookieStore();
+        try (CloseableHttpClient client = TestHttpClient
+                .withSSLContext(DefaultServer.getClientSSLContext())
+                .setDefaultCookieStore(cookieStore).build()) {
             InMemorySessionManager sessionManager = new InMemorySessionManager("");
             final SslSessionConfig sessionConfig = new SslSessionConfig(sessionManager);
             final SessionAttachmentHandler handler = new SessionAttachmentHandler(sessionManager, sessionConfig)
@@ -76,36 +80,40 @@ public class SSLSessionTestCase {
                         }
                     });
             DefaultServer.startSSLServer();
-            client.setSSLContext(DefaultServer.getClientSSLContext());
             DefaultServer.setRootHandler(handler);
 
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerSSLAddress() + "/notamatchingpath");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            HttpClientUtils.readResponse(result);
-            Header[] header = result.getHeaders(COUNT);
-            Assert.assertEquals("0", header[0].getValue());
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                HttpClientUtils.readResponse(result);
+                Header[] header = result.getHeaders(COUNT);
+                Assert.assertEquals("0", header[0].getValue());
+                return result;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerSSLAddress() + "/notamatchingpath");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            HttpClientUtils.readResponse(result);
-            header = result.getHeaders(COUNT);
-            Assert.assertEquals("1", header[0].getValue());
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                HttpClientUtils.readResponse(result);
+                Header[] header = result.getHeaders(COUNT);
+                Assert.assertEquals("1", header[0].getValue());
+                return result;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerSSLAddress() + "/notamatchingpath");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            HttpClientUtils.readResponse(result);
-            header = result.getHeaders(COUNT);
-            Assert.assertEquals("2", header[0].getValue());
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                HttpClientUtils.readResponse(result);
+                Header[] header = result.getHeaders(COUNT);
+                Assert.assertEquals("2", header[0].getValue());
+                return result;
+            });
 
-            Assert.assertEquals(0, client.getCookieStore().getCookies().size());
+            Assert.assertEquals(0, cookieStore.getCookies().size());
 
 
         } finally {
             DefaultServer.stopSSLServer();
-            client.getConnectionManager().shutdown();
         }
     }
 

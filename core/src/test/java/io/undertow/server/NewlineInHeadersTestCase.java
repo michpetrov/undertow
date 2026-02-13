@@ -20,9 +20,9 @@ package io.undertow.server;
 
 import java.io.IOException;
 
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -56,23 +56,24 @@ public class NewlineInHeadersTestCase {
                 });
             }
         });
-        final TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL());
             post.setEntity(new StringEntity("test"));
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("test", result.getFirstHeader(ECHO).getValue());
-            Assert.assertEquals(RESPONSE, HttpClientUtils.readResponse(result));
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("test", result.getFirstHeader(ECHO).getValue());
+                Assert.assertEquals(RESPONSE, HttpClientUtils.readResponse(result));
+                return null;
+            });
 
             post = new HttpPost(DefaultServer.getDefaultServerURL());
             post.setEntity(new StringEntity("test\nnewline"));
-            result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals("test newline", result.getFirstHeader(ECHO).getValue());
-            Assert.assertEquals(RESPONSE, HttpClientUtils.readResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals("test newline", result.getFirstHeader(ECHO).getValue());
+                Assert.assertEquals(RESPONSE, HttpClientUtils.readResponse(result));
+                return null;
+            });
         }
     }
 }

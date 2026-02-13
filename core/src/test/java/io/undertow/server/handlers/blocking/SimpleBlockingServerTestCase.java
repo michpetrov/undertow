@@ -35,12 +35,12 @@ import io.undertow.testutils.TestHttpClient;
 import io.undertow.util.Headers;
 import io.undertow.util.Methods;
 import io.undertow.util.StatusCodes;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpDelete;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpHead;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
+import org.apache.hc.client5.http.classic.methods.HttpDelete;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpHead;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -128,49 +128,46 @@ public class SimpleBlockingServerTestCase {
     @Test
     public void sendHttpRequest() throws IOException {
         message = "My HTTP Request!";
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertEquals(message, HttpClientUtils.readResponse(result));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+                return result;
+            });
         }
     }
 
     @Test
     public void testHeadRequests() throws IOException {
         message = "My HTTP Request!";
-        TestHttpClient client = new TestHttpClient();
-        HttpHead head = new HttpHead(DefaultServer.getDefaultServerURL() + "/path");
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            HttpHead head = new HttpHead(DefaultServer.getDefaultServerURL() + "/path");
             for (int i = 0; i < 3; ++i) {
                 //WFLY-1540 run a few requests to make sure persistent re
-                HttpResponse result = client.execute(head);
-                Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-                Assert.assertEquals("", HttpClientUtils.readResponse(result));
-                Assert.assertEquals(message.length() + "", result.getFirstHeader(Headers.CONTENT_LENGTH_STRING).getValue());
+                client.execute(head, result -> {
+                    Assert.assertEquals(StatusCodes.OK, result.getCode());
+                    Assert.assertEquals("", HttpClientUtils.readResponse(result));
+                    Assert.assertEquals(message.length() + "", result.getFirstHeader(Headers.CONTENT_LENGTH_STRING).getValue());
+                    return result;
+                });
             }
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 
     @Test
     public void testDeleteRequests() throws IOException {
         message = "My HTTP Request!";
-        TestHttpClient client = new TestHttpClient();
-        HttpDelete delete = new HttpDelete(DefaultServer.getDefaultServerURL() + "/path");
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
+            HttpDelete delete = new HttpDelete(DefaultServer.getDefaultServerURL() + "/path");
             for (int i = 0; i < 3; ++i) {
                 //WFLY-1540 run a few requests to make sure persistent re
-                HttpResponse result = client.execute(delete);
-                Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-                Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+                client.execute(delete, result -> {
+                    Assert.assertEquals(StatusCodes.OK, result.getCode());
+                    Assert.assertEquals(message, HttpClientUtils.readResponse(result));
+                    return result;
+                });
             }
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 
@@ -181,29 +178,32 @@ public class SimpleBlockingServerTestCase {
             messageBuilder.append("*");
         }
         message = messageBuilder.toString();
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path");
-            HttpResponse result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String resultString = HttpClientUtils.readResponse(result);
-            Assert.assertEquals(message.length(), resultString.length());
-            Assert.assertTrue(message.equals(resultString));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String resultString = HttpClientUtils.readResponse(result);
+                Assert.assertEquals(message.length(), resultString.length());
+                Assert.assertTrue(message.equals(resultString));
+                return result;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path?useSender");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            String resultBody = HttpClientUtils.readResponse(result);
-            Assert.assertTrue(message.equals(resultBody));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String resultBody = HttpClientUtils.readResponse(result);
+                Assert.assertTrue(message.equals(resultBody));
+                return result;
+            });
 
             get = new HttpGet(DefaultServer.getDefaultServerURL() + "/path?useFragmentedSender");
-            result = client.execute(get);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            resultBody = HttpClientUtils.readResponse(result);
-            Assert.assertTrue(message.equals(resultBody));
+            client.execute(get, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                String resultBody = HttpClientUtils.readResponse(result);
+                Assert.assertTrue(message.equals(resultBody));
+                return result;
+            });
 
-        } finally {
-            client.getConnectionManager().shutdown();
         }
     }
 
@@ -211,15 +211,14 @@ public class SimpleBlockingServerTestCase {
     @Test
     public void testSmallRequest() throws IOException {
         message = null;
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
             post.setEntity(new StringEntity("a"));
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertTrue("a".equals(HttpClientUtils.readResponse(result)));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertTrue("a".equals(HttpClientUtils.readResponse(result)));
+                return result;
+            });
         }
     }
 
@@ -230,15 +229,14 @@ public class SimpleBlockingServerTestCase {
         for (int i = 0; i < 6919638; ++i) {
             messageBuilder.append("+");
         }
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpPost post = new HttpPost(DefaultServer.getDefaultServerURL() + "/path");
             post.setEntity(new StringEntity(messageBuilder.toString()));
-            HttpResponse result = client.execute(post);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            Assert.assertTrue(messageBuilder.toString().equals(HttpClientUtils.readResponse(result)));
-        } finally {
-            client.getConnectionManager().shutdown();
+            client.execute(post, result -> {
+                Assert.assertEquals(StatusCodes.OK, result.getCode());
+                Assert.assertTrue(messageBuilder.toString().equals(HttpClientUtils.readResponse(result)));
+                return result;
+            });
         }
     }
 }

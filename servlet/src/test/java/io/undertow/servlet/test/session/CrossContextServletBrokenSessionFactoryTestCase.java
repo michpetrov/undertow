@@ -21,8 +21,8 @@ package io.undertow.servlet.test.session;
 
 import jakarta.servlet.ServletException;
 
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -101,27 +101,29 @@ public class CrossContextServletBrokenSessionFactoryTestCase {
 
     @Test
     public void testSharedSessionCookieMultipleDeployments() throws Exception {
-        TestHttpClient client = new TestHttpClient();
-        try {
+        try (CloseableHttpClient client = TestHttpClient.defaultClient()) {
             HttpGet direct1 = new HttpGet(DefaultServer.getDefaultServerURL() + "/1/servlet");
-            HttpResponse result = client.execute(direct1);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
+            client.execute(direct1, result -> {
+            Assert.assertEquals(StatusCodes.OK, result.getCode());
             String response = HttpClientUtils.readResponse(result);
             Assert.assertEquals("1", response);
+                return null;
+            });
 
-            result = client.execute(direct1);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            response = HttpClientUtils.readResponse(result);
+            client.execute(direct1, result -> {
+            Assert.assertEquals(StatusCodes.OK, result.getCode());
+            String response = HttpClientUtils.readResponse(result);
             Assert.assertEquals("2", response);
+                return null;
+            });
 
             Thread.sleep(1000); // await session timeout
-            result = client.execute(direct1);
-            Assert.assertEquals(StatusCodes.OK, result.getStatusLine().getStatusCode());
-            response = HttpClientUtils.readResponse(result);
+            client.execute(direct1, result -> {
+            Assert.assertEquals(StatusCodes.OK, result.getCode());
+            String response = HttpClientUtils.readResponse(result);
             Assert.assertEquals("1", response);
-
-        } finally {
-            client.getConnectionManager().shutdown();
+                return null;
+            });
         }
     }
 }
